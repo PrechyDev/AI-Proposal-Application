@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import AccessLog, Proposal, Snapshot
+from app.models import AccessLog, DeliveryLog, Proposal, Snapshot
 from app.services.pdf import PdfRenderError, render_pdf
 from app.templating import templates
 
@@ -117,6 +117,30 @@ def view_proposal(token: str, request: Request):
     )
 
 
+def _log_pdf_export(proposal_id: int, status_value: str, error_message: str | None = None) -> None:
+    """Persists a PDF export attempt to `delivery_logs` (spec section 7: a
+    failed export must surface on the proposal record, not just as a
+    one-off error response to whoever clicked download) - same
+    log-both-outcomes, never-block pattern as every email send in this app.
+    Best-effort like `_log_access`: a logging failure here must never turn
+    a successful download into an error, or hide a real export failure
+    behind a second one.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            db.add(
+                DeliveryLog(
+                    proposal_id=proposal_id, channel="pdf_export", status=status_value, error_message=error_message
+                )
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Failed to log PDF export attempt for proposal id=%s", proposal_id)
+
+
 @router.get("/view/{token}/pdf")
 def download_pdf(token: str):
     result = _get_valid_snapshot(token)
@@ -128,13 +152,15 @@ def download_pdf(token: str):
     view_url = f"{settings.app_base_url}/view/{token}"
     try:
         pdf_bytes = render_pdf(view_url)
-    except PdfRenderError:
+    except PdfRenderError as exc:
         logger.error("PDF export failed for proposal id=%s", proposal.id)
+        _log_pdf_export(proposal.id, "failed", str(exc))
         return Response(
             content="Sorry, the PDF could not be generated right now. Please try again shortly.",
             media_type="text/plain",
             status_code=502,
         )
+    _log_pdf_export(proposal.id, "success")
 
     safe_name = "".join(c if c.isalnum() else "_" for c in proposal.client_name).strip("_") or "proposal"
     return Response(

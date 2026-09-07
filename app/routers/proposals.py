@@ -209,6 +209,7 @@ def _render_detail(request: Request, db: Session, proposal: Proposal, error: str
     sections = db.execute(
         select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
     ).scalars().all()
+    delivery_logs = _get_delivery_logs(proposal, db)
     return templates.TemplateResponse(
         request=request,
         name="proposal_detail.html",
@@ -219,7 +220,13 @@ def _render_detail(request: Request, db: Session, proposal: Proposal, error: str
             "attached_references": _get_attached_references(proposal, db),
             "attachable_library_files": _get_attachable_library_files(proposal, db),
             "approvers": _get_approvers(db),
-            "delivery_logs": _get_delivery_logs(proposal, db),
+            "delivery_logs": delivery_logs,
+            # Whether a client-delivery send has actually been attempted -
+            # distinct from delivery_logs being non-empty, since that list
+            # also holds approver_notification/changes_requested_notification/
+            # pdf_export rows that can exist with no send attempt yet, which
+            # would otherwise mislabel a first send as a "retry".
+            "has_send_attempt": any(log.channel == "client_delivery" for log in delivery_logs),
         },
         status_code=status_code,
     )
@@ -350,10 +357,16 @@ def send_to_client(
         )
 
     settings = get_settings()
+    creator = db.get(User, proposal.created_by)
     view_url = f"{settings.app_base_url}/view/{proposal.client_token}"
     try:
         send_email(
             to=proposal.client_email,
+            # CC'd so the salesperson sees exactly what the client received;
+            # replies go straight to them, not the shared inbox, since
+            # they're the one with the actual client relationship.
+            cc=creator.email if creator else None,
+            reply_to=creator.email if creator else None,
             subject=f"Your proposal from Koya Talent: {proposal.company_name}",
             html=(
                 f"<p>Hi {proposal.client_name},</p>"
@@ -495,7 +508,8 @@ def generate_sections(
 
     try:
         generated = generate_proposal_sections(proposal, db)
-    except GenerationError:
+    except GenerationError as exc:
+        logger.warning("Generation failed for proposal id=%s: %s", proposal.id, exc)
         return _render_detail(
             request, db, proposal,
             error="Generation failed - the AI service did not return a usable proposal. Please try again.",
@@ -680,7 +694,10 @@ def regenerate_section_route(
 
     try:
         result = regenerate_section(proposal, section_key, section.content, comment.strip() or None, db)
-    except GenerationError:
+    except GenerationError as exc:
+        logger.warning(
+            "Regeneration failed for section id=%s (proposal id=%s): %s", section.id, proposal.id, exc
+        )
         return _render_edit(
             request, db, proposal,
             error="Regeneration failed - the AI service did not return a usable section. Please try again.",

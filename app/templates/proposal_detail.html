@@ -93,7 +93,7 @@
     {% elif proposal.status == "approved" %}
     <p><em>Approved.</em></p>
     <form method="post" action="/proposals/{{ proposal.id }}/send">
-      <button type="submit">{% if delivery_logs %}Retry Send to Client{% else %}Send to Client{% endif %}</button>
+      <button type="submit">{% if has_send_attempt %}Retry Send to Client{% else %}Send to Client{% endif %}</button>
     </form>
     <form method="post" action="/proposals/{{ proposal.id }}/reopen">
       <button type="submit">Reopen for Editing</button>
