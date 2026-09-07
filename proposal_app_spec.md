@@ -35,6 +35,8 @@ A FastAPI + Postgres web app where salespeople turn discovery-call notes into a 
 
 ## 3. Data Layer (Postgres schema)
 
+**Note**: "schema" here means table shape, not the Postgres namespace. All tables below live inside a dedicated Postgres schema named `proposal_app` (created via migration), not the default `public` schema — this Supabase instance is shared with other Koya projects (see §9), and namespacing by Postgres schema keeps this app's tables isolated from theirs at the database level, not just by naming convention.
+
 ```
 users
   id, name, email, password_hash,
@@ -203,7 +205,7 @@ At this volume, the entire Opus-vs-Sonnet cost gap is about $5 per 100 proposals
 ## 9. Deployment Decisions
 
 - **Hosting**: a platform with minimal ops overhead given the timeline — e.g. Railway or Render for the FastAPI app (both support Postgres add-ons and env-based secrets easily), rather than self-managing a VM.
-- **Database**: Supabase Postgres (reuses infra you already know from Week 2) or the hosting platform's managed Postgres — either is fine; Supabase is worth it only if you also want its storage bucket for `reference_files` uploads.
+- **Database**: Supabase Postgres, reusing the same project/instance from Week 2 rather than a separate one — Supabase's free tier caps a personal account at two projects, so a single shared instance is used as a central Postgres host for multiple Koya projects rather than one project per app. To keep this app's tables fully isolated from other projects sharing the instance (schema-level separation, not a separate database), all of this app's tables live in a dedicated `proposal_app` Postgres schema rather than the default `public` schema — see §3.
 - **File storage**: reference files and generated PDFs should go to object storage (Supabase Storage or S3-compatible), not the app's local disk — local disk doesn't survive redeploys on most PaaS platforms.
 - **Secrets**: Claude API key, email API key, DB URL — all as environment variables, never committed.
 - **Domain for client links**: a short, clean subdomain (e.g. `proposals.yourcompany.com`) reads more trustworthy in a client's inbox than a raw platform-generated URL.
@@ -230,6 +232,7 @@ At this volume, the entire Opus-vs-Sonnet cost gap is about $5 per 100 proposals
 - Scope boundary: tool's job ends at delivery/download, no negotiation loop
 - Feature: 7-day unopened-link nudge notification to the salesperson
 - Client link expiry: 30 days
+- Database hosting: one shared Supabase instance reused across Koya projects (Supabase's free tier allows only two projects), with each project's tables isolated in its own Postgres schema (`proposal_app` for this app) rather than a separate project per app
 
 **Implicit (followed from the above, not separately discussed)**
 - Soft-delete for users (not hard-delete), so historical audit records never break

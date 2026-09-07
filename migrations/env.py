@@ -7,7 +7,7 @@ from alembic import context
 
 import app.models  # noqa: F401 - registers all models on Base.metadata
 from app.config import get_settings
-from app.db import Base
+from app.db import APP_SCHEMA, Base
 
 config = context.config
 
@@ -22,12 +22,23 @@ def _database_url() -> str:
     return settings.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 
+def include_name(name, type_, parent_names):
+    # This DB is shared with an unrelated project living in the "public"
+    # schema. Restricting autogenerate to APP_SCHEMA keeps it permanently
+    # blind to those tables, instead of relying on a human catching it.
+    if type_ == "schema":
+        return name == APP_SCHEMA
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=_database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
+        include_name=include_name,
     )
 
     with context.begin_transaction():
@@ -42,7 +53,12 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_schemas=True,
+            include_name=include_name,
+        )
 
         with context.begin_transaction():
             context.run_migrations()
