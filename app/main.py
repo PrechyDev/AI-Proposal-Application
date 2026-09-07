@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import HTTPException
@@ -11,7 +12,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import require_user
 from app.config import get_settings
 from app.db import engine, get_db
-from app.models import Proposal, User
+from app.models import DeliveryLog, Proposal, User
 from app.routers.admin import router as admin_router
 from app.routers.approvals import router as approvals_router
 from app.routers.auth import router as auth_router
@@ -22,6 +23,13 @@ from app.storage import ensure_bucket_exists
 from app.templating import templates
 
 logger = logging.getLogger(__name__)
+
+# Spec section 7: "Proposal sent but never opened -> 7-day check (via
+# access_logs) triggers a notification back to the salesperson." No job
+# scheduler exists yet (and the hosting platform for step 16 isn't chosen),
+# so this is computed live on dashboard load rather than via a persistent
+# background job - functionally the same signal, no new infrastructure.
+NUDGE_THRESHOLD = timedelta(days=7)
 settings = get_settings()
 
 
@@ -74,6 +82,41 @@ def index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context={})
 
 
+def _get_nudge_candidates(user: User, db: Session) -> list[dict]:
+    """Proposals this salesperson sent that the client still hasn't opened,
+    7+ days after the successful send. "Sent at" comes from the successful
+    client_delivery DeliveryLog row, not a proposals column (there isn't
+    one) - that log is the one unambiguous record of when delivery actually
+    succeeded.
+    """
+    sent_unopened = db.execute(
+        select(Proposal).where(
+            Proposal.created_by == user.id,
+            Proposal.status == "sent",
+            Proposal.first_opened_at.is_(None),
+        )
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    candidates = []
+    for proposal in sent_unopened:
+        sent_log = db.execute(
+            select(DeliveryLog)
+            .where(
+                DeliveryLog.proposal_id == proposal.id,
+                DeliveryLog.channel == "client_delivery",
+                DeliveryLog.status == "success",
+            )
+            .order_by(DeliveryLog.attempted_at.desc())
+        ).scalars().first()
+        if sent_log is None:
+            continue
+        age = now - sent_log.attempted_at
+        if age >= NUDGE_THRESHOLD:
+            candidates.append({"proposal": proposal, "days_unopened": age.days})
+    return candidates
+
+
 @app.get("/dashboard")
 def dashboard(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
     pending_approvals = []
@@ -83,8 +126,13 @@ def dashboard(request: Request, user: User = Depends(require_user), db: Session 
             .where(Proposal.approver_id == user.id, Proposal.status == "pending_approval")
             .order_by(Proposal.updated_at)
         ).scalars().all()
+
+    nudge_candidates = []
+    if user.can_create:
+        nudge_candidates = _get_nudge_candidates(user, db)
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"user": user, "pending_approvals": pending_approvals},
+        context={"user": user, "pending_approvals": pending_approvals, "nudge_candidates": nudge_candidates},
     )

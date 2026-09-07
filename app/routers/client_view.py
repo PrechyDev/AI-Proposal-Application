@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Proposal, Snapshot
+from app.models import AccessLog, Proposal, Snapshot
 from app.services.pdf import PdfRenderError, render_pdf
 from app.templating import templates
 
@@ -70,12 +70,46 @@ def _get_valid_snapshot(token: str) -> tuple[Proposal, Snapshot] | None:
         return None
 
 
+def _log_access(proposal_id: int, request: Request) -> None:
+    """Records a client view (spec sections 5/6: access_logs proves whether/
+    when a proposal was opened, and is what the 7-day nudge check reads).
+    Best-effort - a logging failure must never break the client's actual
+    view of the page, so any error here is swallowed, not raised.
+
+    Note: a "Download as PDF" click causes Playwright to navigate to this
+    same /view/{token} route internally (spec section 2's "one template,
+    not two parallel renderers"), so it logs one extra access_logs row here
+    too - distinguishable by IP/user-agent (the server's own, not the
+    client's), and harmless: first_opened_at is only ever set once, so it
+    still reflects the real first visit whichever request happens to be it.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            db.add(
+                AccessLog(
+                    proposal_id=proposal_id,
+                    ip_address=request.client.host if request.client else "unknown",
+                    user_agent=request.headers.get("user-agent"),
+                )
+            )
+            proposal = db.get(Proposal, proposal_id)
+            if proposal is not None and proposal.first_opened_at is None:
+                proposal.first_opened_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Failed to log access for proposal id=%s", proposal_id)
+
+
 @router.get("/view/{token}")
 def view_proposal(token: str, request: Request):
     result = _get_valid_snapshot(token)
     if result is None:
         return RedirectResponse(url="/", status_code=303)
     proposal, snapshot = result
+    _log_access(proposal.id, request)
     return templates.TemplateResponse(
         request=request,
         name="proposal_view.html",

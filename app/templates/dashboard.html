@@ -33,6 +33,17 @@
   {% endif %}
   {% endif %}
 
+  {% if user.can_create and nudge_candidates %}
+  <h2>Needs a Nudge ({{ nudge_candidates|length }})</h2>
+  <p><em>Sent to the client but not opened yet.</em></p>
+  <ul>
+    {% for item in nudge_candidates %}
+    <li><a href="/proposals/{{ item.proposal.id }}">{{ item.proposal.client_name }} ({{ item.proposal.company_name }})</a>
+      &mdash; unopened for {{ item.days_unopened }} day{{ 's' if item.days_unopened != 1 else '' }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
   <form method="post" action="/logout">
     <button type="submit">Log out</button>
   </form>

@@ -174,3 +174,16 @@ verified. Id 21 ("Real Client Co") has `client_email` set to the id-7 test
 user's real address (`preciousrobinsonokafor@gmail.com`, the only address
 Resend's sandbox will actually deliver to) and is fully `sent` — the one
 proposal in the dev DB that's gone through a real, successful client send.
+
+Step 13 verification added proposals 22-24 (all sent to
+`preciousrobinsonokafor@gmail.com`, the id-7 test user, for the same Resend
+sandbox reason as above). Id 22 ("Warehouse Alpha") has been viewed twice and
+PDF-downloaded once — `first_opened_at` is set and it has 3 `access_logs` rows
+(one of them a documented server-side artifact from the PDF download's
+internal Playwright render, `ip_address='127.0.0.1'`, not a real second
+client visit). Id 23 ("Warehouse Beta") is unopened with its successful
+`client_delivery` log's `attempted_at` deliberately backdated 8 days — it will
+keep showing up in `sales@test.local`'s "Needs a Nudge" dashboard section
+indefinitely; that's expected, not a bug, don't "fix" it by resetting the
+timestamp unless you're done using it as a nudge example. Id 24 ("Warehouse
+Gamma") is unopened but sent moments ago — deliberately too recent to nudge on.
