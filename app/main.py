@@ -15,7 +15,9 @@ from app.db import engine, get_db
 from app.models import User
 from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
+from app.routers.library import router as library_router
 from app.routers.proposals import router as proposals_router
+from app.storage import ensure_bucket_exists
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -30,6 +32,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.critical("Database connection failed at startup.", exc_info=True)
         raise
+    # Non-fatal unlike the DB check above: a storage outage shouldn't take
+    # down routes that don't touch reference files.
+    ensure_bucket_exists()
     yield
 
 
@@ -38,6 +43,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, sa
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(proposals_router)
+app.include_router(library_router)
 
 templates = Jinja2Templates(directory="app/templates")
 

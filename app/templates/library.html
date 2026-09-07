@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Reference Library — AI Proposal Application</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>Reference Library</h1>
+  <p>Reusable reference files (case studies, rate cards, past work) available to attach to any proposal.</p>
+
+  {% if error %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+
+  <h2>Upload a new reference file</h2>
+  <form method="post" action="/library/upload" enctype="multipart/form-data">
+    <label>File (.txt, .md, .pdf, .jpg, .png, .gif, .webp)<br>
+      <input type="file" name="file" required>
+    </label><br>
+    <label>Tags (comma-separated, optional)<br>
+      <input type="text" name="tags" size="60">
+    </label><br>
+    <button type="submit">Add to library</button>
+  </form>
+
+  <h2>Files ({{ files|length }})</h2>
+  {% if files %}
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>Name</th>
+      <th>Tags</th>
+      <th>Uploaded by</th>
+      <th>Uploaded</th>
+      <th></th>
+    </tr>
+    {% for f in files %}
+    <tr>
+      <td>{{ f.name }}</td>
+      <td>{{ f.tags|join(', ') if f.tags else '' }}</td>
+      <td>{{ uploaders.get(f.uploaded_by, "user #" ~ f.uploaded_by) }}</td>
+      <td>{{ f.created_at }}</td>
+      <td>
+        <form method="post" action="/library/{{ f.id }}/retire" style="margin: 0;">
+          <button type="submit">Retire</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p><em>No reference files in the library yet.</em></p>
+  {% endif %}
+</body>
+</html>

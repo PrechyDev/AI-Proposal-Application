@@ -12,6 +12,15 @@
   <p style="color: red;">{{ error }}</p>
   {% endif %}
 
+  <p><strong>References used:</strong>
+    {% if attached_references %}
+      {{ attached_references|map(attribute='name')|join(', ') }}
+      (manage on the <a href="/proposals/{{ proposal.id }}">proposal page</a>)
+    {% else %}
+      <em>none</em>
+    {% endif %}
+  </p>
+
   {% for view in section_views %}
   <hr>
   <h2>{{ view.title }}

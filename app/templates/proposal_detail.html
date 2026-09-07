@@ -25,6 +25,46 @@
   <p style="color: red;">{{ error }}</p>
   {% endif %}
 
+  <h2>References Used</h2>
+  {% if attached_references %}
+  <ul>
+    {% for ref in attached_references %}
+    <li>{{ ref.name }}{% if ref.tags %} ({{ ref.tags|join(', ') }}){% endif %}
+      <form method="post" action="/proposals/{{ proposal.id }}/references/{{ ref.id }}/remove" style="display: inline;">
+        <button type="submit">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><em>No reference files attached.</em></p>
+  {% endif %}
+
+  {% if attachable_library_files %}
+  <form method="post" action="/proposals/{{ proposal.id }}/references/attach">
+    <p><strong>Attach from library:</strong></p>
+    {% for f in attachable_library_files %}
+    <label>
+      <input type="checkbox" name="reference_file_ids" value="{{ f.id }}">
+      {{ f.name }}{% if f.tags %} ({{ f.tags|join(', ') }}){% endif %}
+    </label><br>
+    {% endfor %}
+    <button type="submit">Attach selected</button>
+  </form>
+  {% endif %}
+
+  <form method="post" action="/proposals/{{ proposal.id }}/references/upload" enctype="multipart/form-data">
+    <p><strong>Upload a new reference file for this proposal:</strong></p>
+    <label>File (.txt, .md, .pdf, .jpg, .png, .gif, .webp)<br>
+      <input type="file" name="file" required>
+    </label><br>
+    <label>Tags (comma-separated, optional)<br>
+      <input type="text" name="tags" size="60">
+    </label><br>
+    <label><input type="checkbox" name="add_to_library" value="yes"> Also add to the reusable library</label><br>
+    <button type="submit">Upload and attach</button>
+  </form>
+
   <h2>Generated Proposal</h2>
   {% if sections %}
     <p><a href="/proposals/{{ proposal.id }}/edit">Edit sections</a></p>

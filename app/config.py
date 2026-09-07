@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(validation_alias="CLAUDE_API_KEY")
     claude_model: str = "claude-sonnet-5"
     session_secret_key: str = Field(validation_alias="SESSION_SECRET_KEY")
+    supabase_project_url: str = Field(validation_alias="SUPABASE_PROJECT_URL")
+    supabase_service_role_key: str = Field(validation_alias="SUPABASE_SERVICE_ROLE_KEY")
 
 
 @lru_cache

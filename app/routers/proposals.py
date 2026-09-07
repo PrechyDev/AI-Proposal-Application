@@ -2,7 +2,7 @@ import logging
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
 from app.db import get_db
-from app.models import Proposal, Section, SectionHistory, User
+from app.models import Proposal, ProposalReference, ReferenceFile, Section, SectionHistory, User
 from app.services.proposal_generation import (
     MAX_REGENERATIONS_PER_SECTION,
     SECTION_KEYS,
@@ -19,6 +19,7 @@ from app.services.proposal_generation import (
     generate_proposal_sections,
     regenerate_section,
 )
+from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,24 @@ def _get_viewable_proposal(proposal_id: int, db: Session, user: User) -> Proposa
     return proposal
 
 
+def _get_attached_references(proposal: Proposal, db: Session) -> list[ReferenceFile]:
+    return db.execute(
+        select(ReferenceFile)
+        .join(ProposalReference, ProposalReference.reference_file_id == ReferenceFile.id)
+        .where(ProposalReference.proposal_id == proposal.id)
+        .order_by(ReferenceFile.created_at)
+    ).scalars().all()
+
+
+def _get_attachable_library_files(proposal: Proposal, db: Session) -> list[ReferenceFile]:
+    attached_ids = select(ProposalReference.reference_file_id).where(ProposalReference.proposal_id == proposal.id)
+    return db.execute(
+        select(ReferenceFile)
+        .where(ReferenceFile.is_library.is_(True), ReferenceFile.id.notin_(attached_ids))
+        .order_by(ReferenceFile.name)
+    ).scalars().all()
+
+
 def _render_detail(request: Request, db: Session, proposal: Proposal, error: str | None = None, status_code: int = 200):
     sections = db.execute(
         select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
@@ -141,7 +160,13 @@ def _render_detail(request: Request, db: Session, proposal: Proposal, error: str
     return templates.TemplateResponse(
         request=request,
         name="proposal_detail.html",
-        context={"proposal": proposal, "sections": sections, "error": error},
+        context={
+            "proposal": proposal,
+            "sections": sections,
+            "error": error,
+            "attached_references": _get_attached_references(proposal, db),
+            "attachable_library_files": _get_attachable_library_files(proposal, db),
+        },
         status_code=status_code,
     )
 
@@ -155,6 +180,98 @@ def view_proposal(
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
     return _render_detail(request, db, proposal)
+
+
+@router.post("/{proposal_id}/references/attach")
+def attach_references(
+    proposal_id: int,
+    request: Request,
+    reference_file_ids: list[int] = Form(default=[]),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+
+    already_attached = {
+        row for row in db.execute(
+            select(ProposalReference.reference_file_id).where(ProposalReference.proposal_id == proposal.id)
+        ).scalars().all()
+    }
+    # Only attach files that actually exist in the library - a stale/tampered
+    # checkbox value pointing at a retired or nonexistent id is silently
+    # ignored rather than erroring the whole request.
+    valid_library_ids = {
+        row for row in db.execute(
+            select(ReferenceFile.id).where(ReferenceFile.is_library.is_(True))
+        ).scalars().all()
+    }
+    for reference_file_id in reference_file_ids:
+        if reference_file_id in already_attached or reference_file_id not in valid_library_ids:
+            continue
+        db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file_id))
+    db.commit()
+    logger.info("User id=%s attached reference files %s to proposal id=%s", user.id, reference_file_ids, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+@router.post("/{proposal_id}/references/{reference_file_id}/remove")
+def remove_reference(
+    proposal_id: int,
+    reference_file_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    # Detaches from this proposal only - never deletes the ReferenceFile row
+    # or its storage object, so it stays available (in the library, or still
+    # attached to any other proposal that also cites it).
+    link = db.execute(
+        select(ProposalReference).where(
+            ProposalReference.proposal_id == proposal.id,
+            ProposalReference.reference_file_id == reference_file_id,
+        )
+    ).scalar_one_or_none()
+    if link is not None:
+        db.delete(link)
+        db.commit()
+        logger.info("User id=%s removed reference file id=%s from proposal id=%s", user.id, reference_file_id, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+@router.post("/{proposal_id}/references/upload")
+def upload_reference_for_proposal(
+    proposal_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    tags: str = Form(""),
+    add_to_library: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    content = file.file.read()
+    try:
+        storage_path = upload_reference_file(file.filename or "", content)
+    except ReferenceFileError as exc:
+        return _render_detail(request, db, proposal, error=str(exc), status_code=400)
+
+    reference_file = ReferenceFile(
+        name=file.filename,
+        storage_path=storage_path,
+        tags=parse_tags(tags),
+        is_library=(add_to_library == "yes"),
+        uploaded_by=user.id,
+    )
+    db.add(reference_file)
+    db.flush()
+    db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file.id))
+    db.commit()
+    logger.info(
+        "User id=%s uploaded reference file id=%s for proposal id=%s (added to library: %s)",
+        user.id, reference_file.id, proposal.id, reference_file.is_library,
+    )
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
 @router.post("/{proposal_id}/generate")
@@ -177,7 +294,7 @@ def generate_sections(
         )
 
     try:
-        generated = generate_proposal_sections(proposal)
+        generated = generate_proposal_sections(proposal, db)
     except GenerationError:
         return _render_detail(
             request, db, proposal,
@@ -258,6 +375,7 @@ def _render_edit(
             "error": error,
             "pending_section_key": pending_section_key,
             "pending_comment": pending_comment,
+            "attached_references": _get_attached_references(proposal, db),
         },
         status_code=status_code,
     )
@@ -352,7 +470,7 @@ def regenerate_section_route(
         )
 
     try:
-        result = regenerate_section(proposal, section_key, section.content, comment.strip() or None)
+        result = regenerate_section(proposal, section_key, section.content, comment.strip() or None, db)
     except GenerationError:
         return _render_edit(
             request, db, proposal,
