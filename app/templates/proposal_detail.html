@@ -90,11 +90,30 @@
     </form>
     {% elif proposal.status == "pending_approval" %}
     <p><em>Awaiting approval.</em></p>
-    {% elif proposal.status in ("approved", "sent") %}
-    <p><em>Approved{% if proposal.status == "sent" %} and sent to the client{% endif %}.</em></p>
+    {% elif proposal.status == "approved" %}
+    <p><em>Approved.</em></p>
+    <form method="post" action="/proposals/{{ proposal.id }}/send">
+      <button type="submit">{% if delivery_logs %}Retry Send to Client{% else %}Send to Client{% endif %}</button>
+    </form>
     <form method="post" action="/proposals/{{ proposal.id }}/reopen">
       <button type="submit">Reopen for Editing</button>
     </form>
+    {% elif proposal.status == "sent" %}
+    <p><em>Sent to the client.</em></p>
+    <form method="post" action="/proposals/{{ proposal.id }}/reopen">
+      <button type="submit">Reopen for Editing</button>
+    </form>
+    {% endif %}
+
+    {% if delivery_logs %}
+    <h3>Delivery History</h3>
+    <ul>
+      {% for log in delivery_logs %}
+      <li>{{ log.channel }}: <strong>{{ log.status }}</strong> at {{ log.attempted_at }}
+        {% if log.error_message %} &mdash; {{ log.error_message }}{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
     {% endif %}
   {% else %}
     <p><em>No sections generated yet.</em></p>

@@ -160,6 +160,17 @@ Step 11 verification added proposal id 16 ("Meridian Freight") — fully approve
 with a real generated PDF pulled and inspected. It too was reopened at the end
 of testing (to prove the old `/view/{token}` link dies), so like id 12 it's
 currently `draft` with `client_token=NULL`, not a live "approved" example
-despite having a `snapshots` row. If you need a proposal that's *currently*
-`approved` with a working client link for manual poking around, none of the
-existing test data qualifies right now — create a fresh one and approve it.
+despite having a `snapshots` row. Steps 9-11's demo walkthrough also added
+proposal id 18 ("Brightview Realty"), fully sent (approved → sent) and left
+that way — a good ready-made "approved and delivered" example if you need one.
+
+Step 12 verification added proposals 19-21: id 19 ("Draft Client") stays a
+`draft` on purpose, used only to confirm sending a never-approved proposal is
+rejected. Id 20 ("Brightfield Fake Co") uses a fake `client_email` on purpose
+and is stuck at `approved` with two `client_delivery` rows in `delivery_logs`,
+both `status="failed"` — real Resend 403s from its sandbox restriction, not a
+bug; don't try to "fix" it by resending, it'll fail again until a domain is
+verified. Id 21 ("Real Client Co") has `client_email` set to the id-7 test
+user's real address (`preciousrobinsonokafor@gmail.com`, the only address
+Resend's sandbox will actually deliver to) and is fully `sent` — the one
+proposal in the dev DB that's gone through a real, successful client send.

@@ -169,6 +169,14 @@ def _get_approvers(db: Session) -> list[User]:
     ).scalars().all()
 
 
+def _get_delivery_logs(proposal: Proposal, db: Session) -> list[DeliveryLog]:
+    return db.execute(
+        select(DeliveryLog)
+        .where(DeliveryLog.proposal_id == proposal.id)
+        .order_by(DeliveryLog.attempted_at.desc())
+    ).scalars().all()
+
+
 def _render_detail(request: Request, db: Session, proposal: Proposal, error: str | None = None, status_code: int = 200):
     sections = db.execute(
         select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
@@ -183,6 +191,7 @@ def _render_detail(request: Request, db: Session, proposal: Proposal, error: str
             "attached_references": _get_attached_references(proposal, db),
             "attachable_library_files": _get_attachable_library_files(proposal, db),
             "approvers": _get_approvers(db),
+            "delivery_logs": _get_delivery_logs(proposal, db),
         },
         status_code=status_code,
     )
@@ -289,6 +298,59 @@ def reopen_proposal(
     proposal.token_expires_at = None
     db.commit()
     logger.info("User id=%s reopened proposal id=%s", user.id, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+@router.post("/{proposal_id}/send")
+def send_to_client(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+
+    # Idempotency check (spec section 7: "Duplicate send - only send if
+    # status isn't already sent"). A prior failed attempt leaves status at
+    # "approved", not "sent", so a retry after a failure is still allowed -
+    # only a proposal that has actually succeeded once is locked out.
+    if proposal.status != "approved":
+        return _render_detail(
+            request, db, proposal,
+            error=f"Can't send a proposal that is '{proposal.status}' - it must be approved (and not already sent).",
+            status_code=400,
+        )
+
+    settings = get_settings()
+    view_url = f"{settings.app_base_url}/view/{proposal.client_token}"
+    try:
+        send_email(
+            to=proposal.client_email,
+            subject=f"Your proposal from Koya Talent: {proposal.company_name}",
+            html=(
+                f"<p>Hi {proposal.client_name},</p>"
+                f"<p>Your proposal from Koya Talent is ready to view.</p>"
+                f'<p><a href="{view_url}">View your proposal</a>.</p>'
+                f"<p>This link stays active for 30 days.</p>"
+            ),
+        )
+        db.add(DeliveryLog(proposal_id=proposal.id, channel="client_delivery", status="success"))
+        proposal.status = "sent"
+        db.commit()
+        logger.info("User id=%s sent proposal id=%s to client", user.id, proposal.id)
+    except EmailError as exc:
+        logger.warning("Client delivery email failed for proposal id=%s: %s", proposal.id, exc)
+        db.add(
+            DeliveryLog(
+                proposal_id=proposal.id, channel="client_delivery", status="failed",
+                error_message=str(exc),
+            )
+        )
+        db.commit()
+        # Proposal stays "approved", never silently marked "sent" (spec
+        # section 7: "Email API is down... proposal shows a clear
+        # 'delivery failed, retry' state, never silently marked sent").
+
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
