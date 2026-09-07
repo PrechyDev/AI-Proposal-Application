@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Review Proposal — {{ proposal.client_name }}</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>Review Proposal — {{ proposal.client_name }} ({{ proposal.company_name }})</h1>
+  <p>Status: <strong>{{ proposal.status }}</strong></p>
+
+  {% if error %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+
+  <h2>References Used</h2>
+  {% if attached_references %}
+  <ul>
+    {% for ref in attached_references %}
+    <li>{{ ref.name }}{% if ref.tags %} ({{ ref.tags|join(', ') }}){% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><em>No reference files attached.</em></p>
+  {% endif %}
+
+  {% if proposal.status == "pending_approval" %}
+  <form method="post" action="/proposals/{{ proposal.id }}/approve">
+    <button type="submit" {% if has_unresolved_gap %}disabled{% endif %}>Approve</button>
+    {% if has_unresolved_gap %}
+    <small style="color: darkorange;">Blocked: one or more sections still need info (see [Needs info] below).</small>
+    {% endif %}
+  </form>
+
+  <form method="post" action="/proposals/{{ proposal.id }}/request-changes">
+    <p><strong>Request changes</strong> - add a comment on any section that needs work, then submit:</p>
+    {% for view in section_views %}
+    <label>{{ view.title }}<br>
+      <textarea name="comment_{{ view.section.section_key }}" rows="2" cols="90"></textarea>
+    </label><br>
+    {% endfor %}
+    <button type="submit">Request Changes</button>
+  </form>
+  {% endif %}
+
+  <h2>Sections</h2>
+  {% for view in section_views %}
+  <hr>
+  <h3>{{ view.title }}
+    {% if view.section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
+  </h3>
+  <div>{{ view.section.content }}</div>
+
+  {% if view.comments %}
+  <p><strong>Comments:</strong></p>
+  <ul>
+    {% for c in view.comments %}
+    <li>{{ c.comment_text }} {% if c.resolved %}<em>(resolved)</em>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endfor %}
+</body>
+</html>

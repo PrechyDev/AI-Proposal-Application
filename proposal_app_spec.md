@@ -156,6 +156,9 @@ Dashboard visibility is a query filter, not a separate permission table: salespe
 | Regenerate clicked on a manually-edited section | Warn first ("this section has manual edits — overwrite?") before regenerating |
 | Proposal edited after approval | Requires an explicit "reopen" action; reopening invalidates the old client token and issues a new one, so no live client link ever points at stale content |
 | Approver's `can_approve` revoked mid-flight | Admin can reassign the pending proposal to a different approver |
+| Approver clicks "Request Changes" with no section comment filled in | Blocked — at least one comment is required, since "request changes" with nothing said isn't actionable feedback |
+| Approve / Request Changes attempted on a proposal that isn't `pending_approval` (already approved, still a draft, etc.) | Blocked with a clear error — both actions are only valid from that one status, enforced server-side, not just hidden in the UI |
+| A `can_approve` user who isn't the proposal's assigned approver opens its approve page | 403 — approval access is scoped to the specific assigned `approver_id` (or an admin), not "anyone with the capability" |
 | Claude API fails/times out | Intake data is saved *before* calling Claude, so a failed generation never loses the salesperson's input — just retry |
 | Claude returns malformed output | Validate response shape before writing to `sections`; on mismatch, surface "generation failed, retry" rather than saving garbage |
 | Regenerate spam (cost control) | Soft cap on regenerations per section |

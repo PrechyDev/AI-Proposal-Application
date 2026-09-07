@@ -74,6 +74,28 @@
     </h3>
     <div>{{ section.content }}</div>
     {% endfor %}
+
+    {% if proposal.status in ("draft", "changes_requested") %}
+    <h2>Submit for Approval</h2>
+    <form method="post" action="/proposals/{{ proposal.id }}/submit">
+      <label>Approver<br>
+        <select name="approver_id" required>
+          <option value="">-- choose an approver --</option>
+          {% for a in approvers %}
+          <option value="{{ a.id }}" {% if proposal.approver_id == a.id %}selected{% endif %}>{{ a.name }} ({{ a.email }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">{% if proposal.status == "changes_requested" %}Resubmit{% else %}Submit{% endif %} for Approval</button>
+    </form>
+    {% elif proposal.status == "pending_approval" %}
+    <p><em>Awaiting approval.</em></p>
+    {% elif proposal.status in ("approved", "sent") %}
+    <p><em>Approved{% if proposal.status == "sent" %} and sent to the client{% endif %}.</em></p>
+    <form method="post" action="/proposals/{{ proposal.id }}/reopen">
+      <button type="submit">Reopen for Editing</button>
+    </form>
+    {% endif %}
   {% else %}
     <p><em>No sections generated yet.</em></p>
     <form method="post" action="/proposals/{{ proposal.id }}/generate">

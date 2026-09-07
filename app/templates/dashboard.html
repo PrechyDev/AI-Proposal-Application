@@ -19,6 +19,20 @@
   {% if user.is_admin %}
   <p><a href="/admin/users">Manage users</a></p>
   {% endif %}
+
+  {% if user.can_approve %}
+  <h2>Pending Your Approval ({{ pending_approvals|length }})</h2>
+  {% if pending_approvals %}
+  <ul>
+    {% for p in pending_approvals %}
+    <li><a href="/proposals/{{ p.id }}/approve">{{ p.client_name }} ({{ p.company_name }})</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p><em>Nothing waiting on you right now.</em></p>
+  {% endif %}
+  {% endif %}
+
   <form method="post" action="/logout">
     <button type="submit">Log out</button>
   </form>

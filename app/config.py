@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     supabase_project_url: str = Field(validation_alias="SUPABASE_PROJECT_URL")
     supabase_service_role_key: str = Field(validation_alias="SUPABASE_SERVICE_ROLE_KEY")
 
+    # Optional, not required: unlike the vars above, the app has a real,
+    # spec-sanctioned degraded mode when these are missing (email send
+    # fails and is logged to delivery_logs - spec section 7's "Email API
+    # is down" edge case) rather than nothing working at all. A fresh dev
+    # environment shouldn't be unable to start just because no email
+    # provider has been configured yet.
+    resend_api_key: str | None = Field(default=None, validation_alias="RESEND_API_KEY")
+    email_from: str = Field(default="onboarding@resend.dev", validation_alias="EMAIL_FROM")
+    email_reply_to: str | None = Field(default=None, validation_alias="EMAIL_REPLY_TO")
+    app_base_url: str = Field(default="http://127.0.0.1:8000", validation_alias="APP_BASE_URL")
+
 
 @lru_cache
 def get_settings() -> Settings:

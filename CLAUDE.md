@@ -111,7 +111,9 @@ Already seeded in the dev DB (all password `test-password-123`):
 | `admin@test.local` | admin, can_create, can_approve |
 | `sales@test.local` | can_create |
 | `approver@test.local` | can_approve |
+| `approver2@test.local` | can_approve (added in step 9, specifically to test "a can_approve user who isn't the assigned approver gets 403") |
 | `nonadmin@test.local` | deactivated (for testing the deactivated-login-blocked case) |
+| `preciousrobinsonokafor@gmail.com` (id 7) | can_approve - the user's own real email, used only to verify a real Resend send (sandbox mode only delivers to the account owner's own address until a custom domain is verified). Don't repurpose for other tests; it's the one address real sends actually reach right now. |
 
 Bootstrap CLI for creating more: `poetry run python -m app.scripts.create_user
 --name ... --email ... --password ... [--admin] [--can-create] [--can-approve]`.
@@ -129,3 +131,14 @@ and a `.pdf` case study attached to proposal 6, and a retired `.txt` library fil
 Supabase Storage now also holds the real uploaded blobs for these under the
 `reference-files` bucket — same "no dev/prod split yet" caveat applies to storage
 now, not just the Postgres rows (see `PROGRESS.md`'s open items).
+
+Step 9/10 verification added proposals 10-13: id 12 ("Solstice Analytics") is the
+most exercised — fully approved, reopened, resubmitted, and re-approved, so it has
+two `snapshots` rows (v1 and v2) and its own `client_token` history; useful as a
+ready-made example once `/view/{token}` (step 11) exists. Id 13 is deliberately
+left in `draft` with an approver force-assigned directly in the DB (bypassing
+`/submit`), used only to test that approving a never-submitted proposal is
+rejected — don't be surprised it has an `approver_id` but is still `draft`.
+Proposal id 14 ("Real Email Test Co") exists solely to verify the real Resend
+send (submitted to the id-7 user above) — filler intake content throughout,
+not a realistic example to reuse.

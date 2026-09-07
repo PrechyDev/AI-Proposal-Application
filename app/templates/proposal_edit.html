@@ -27,6 +27,19 @@
     {% if view.section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
   </h2>
 
+  {% if view.unresolved_comments %}
+  <p style="color: darkred;"><strong>Approver feedback:</strong></p>
+  <ul>
+    {% for c in view.unresolved_comments %}
+    <li>{{ c.comment_text }} &mdash; {{ view.authors.get(c.created_by, "user #" ~ c.created_by) }}
+      <form method="post" action="/proposals/{{ proposal.id }}/comments/{{ c.id }}/resolve" style="display: inline;">
+        <button type="submit">Mark resolved</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
   {% if pending_section_key == view.section.section_key %}
   <p style="color: red;">{{ error }}</p>
   <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate">
@@ -51,6 +64,18 @@
     </button>
     <small>({{ view.regenerate_count }}/{{ view.regenerate_limit }} regenerations used)</small>
   </form>
+
+  {% if view.comments %}
+  <details>
+    <summary>Approval comments ({{ view.comments|length }})</summary>
+    {% for c in view.comments %}
+    <div style="margin: 0.5em 0; padding-left: 0.5em; border-left: 2px solid #ccc;">
+      {{ c.comment_text }} &mdash; {{ view.authors.get(c.created_by, "user #" ~ c.created_by) }}
+      at {{ c.created_at }} {% if c.resolved %}<em>(resolved)</em>{% endif %}
+    </div>
+    {% endfor %}
+  </details>
+  {% endif %}
 
   <details>
     <summary>History ({{ view.history|length }})</summary>

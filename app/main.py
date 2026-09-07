@@ -5,15 +5,16 @@ from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import require_user
 from app.config import get_settings
 from app.db import engine, get_db
-from app.models import User
+from app.models import Proposal, User
 from app.routers.admin import router as admin_router
+from app.routers.approvals import router as approvals_router
 from app.routers.auth import router as auth_router
 from app.routers.library import router as library_router
 from app.routers.proposals import router as proposals_router
@@ -43,6 +44,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, sa
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(proposals_router)
+app.include_router(approvals_router)
 app.include_router(library_router)
 
 templates = Jinja2Templates(directory="app/templates")
@@ -75,5 +77,16 @@ def index(request: Request):
 
 
 @app.get("/dashboard")
-def dashboard(request: Request, user: User = Depends(require_user)):
-    return templates.TemplateResponse(request=request, name="dashboard.html", context={"user": user})
+def dashboard(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    pending_approvals = []
+    if user.can_approve:
+        pending_approvals = db.execute(
+            select(Proposal)
+            .where(Proposal.approver_id == user.id, Proposal.status == "pending_approval")
+            .order_by(Proposal.updated_at)
+        ).scalars().all()
+    return templates.TemplateResponse(
+        request=request,
+        name="dashboard.html",
+        context={"user": user, "pending_approvals": pending_approvals},
+    )

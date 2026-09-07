@@ -9,8 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
+from app.config import get_settings
 from app.db import get_db
-from app.models import Proposal, ProposalReference, ReferenceFile, Section, SectionHistory, User
+from app.models import (
+    ApprovalComment,
+    DeliveryLog,
+    Proposal,
+    ProposalReference,
+    ReferenceFile,
+    Section,
+    SectionHistory,
+    User,
+)
+from app.services.email import EmailError, send_email
 from app.services.proposal_generation import (
     MAX_REGENERATIONS_PER_SECTION,
     SECTION_KEYS,
@@ -153,6 +164,12 @@ def _get_attachable_library_files(proposal: Proposal, db: Session) -> list[Refer
     ).scalars().all()
 
 
+def _get_approvers(db: Session) -> list[User]:
+    return db.execute(
+        select(User).where(User.can_approve.is_(True), User.is_active.is_(True)).order_by(User.name)
+    ).scalars().all()
+
+
 def _render_detail(request: Request, db: Session, proposal: Proposal, error: str | None = None, status_code: int = 200):
     sections = db.execute(
         select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
@@ -166,6 +183,7 @@ def _render_detail(request: Request, db: Session, proposal: Proposal, error: str
             "error": error,
             "attached_references": _get_attached_references(proposal, db),
             "attachable_library_files": _get_attachable_library_files(proposal, db),
+            "approvers": _get_approvers(db),
         },
         status_code=status_code,
     )
@@ -180,6 +198,99 @@ def view_proposal(
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
     return _render_detail(request, db, proposal)
+
+
+@router.post("/{proposal_id}/submit")
+def submit_proposal(
+    proposal_id: int,
+    request: Request,
+    approver_id: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+
+    if proposal.status not in ("draft", "changes_requested"):
+        return _render_detail(
+            request, db, proposal,
+            error=f"Can't submit a proposal that is already '{proposal.status}'.",
+            status_code=400,
+        )
+    if not db.execute(select(Section).where(Section.proposal_id == proposal.id)).scalars().first():
+        return _render_detail(
+            request, db, proposal, error="Generate the proposal before submitting it.", status_code=400
+        )
+
+    approver = None
+    if approver_id.strip().isdigit():
+        approver = db.execute(
+            select(User).where(
+                User.id == int(approver_id), User.can_approve.is_(True), User.is_active.is_(True)
+            )
+        ).scalar_one_or_none()
+    if approver is None:
+        return _render_detail(
+            request, db, proposal, error="Pick a valid approver to submit this proposal.", status_code=400
+        )
+
+    proposal.approver_id = approver.id
+    proposal.status = "pending_approval"
+    db.commit()
+    logger.info("User id=%s submitted proposal id=%s to approver id=%s", user.id, proposal.id, approver.id)
+
+    settings = get_settings()
+    review_url = f"{settings.app_base_url}/proposals/{proposal.id}/approve"
+    try:
+        send_email(
+            to=approver.email,
+            subject=f"Proposal ready for your review: {proposal.client_name} ({proposal.company_name})",
+            html=(
+                f"<p>A proposal for <strong>{proposal.client_name}</strong> "
+                f"({proposal.company_name}) is ready for your review.</p>"
+                f'<p><a href="{review_url}">Log in and review it</a>.</p>'
+            ),
+        )
+        db.add(DeliveryLog(proposal_id=proposal.id, channel="approver_notification", status="success"))
+    except EmailError as exc:
+        logger.warning("Approver notification email failed for proposal id=%s: %s", proposal.id, exc)
+        db.add(
+            DeliveryLog(
+                proposal_id=proposal.id, channel="approver_notification", status="failed",
+                error_message=str(exc),
+            )
+        )
+    db.commit()
+
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+@router.post("/{proposal_id}/reopen")
+def reopen_proposal(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+
+    if proposal.status not in ("approved", "sent"):
+        return _render_detail(
+            request, db, proposal,
+            error=f"Can't reopen a proposal that is '{proposal.status}' - only an approved or sent one.",
+            status_code=400,
+        )
+
+    # Invalidates the old client link immediately (spec section 7: "no live
+    # client link ever points at stale content") - a new token is issued the
+    # next time this proposal is approved (step 10), not here, since an
+    # unapproved/reopened proposal shouldn't have a live client-facing link
+    # at all.
+    proposal.status = "draft"
+    proposal.client_token = None
+    proposal.token_expires_at = None
+    db.commit()
+    logger.info("User id=%s reopened proposal id=%s", user.id, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
 @router.post("/{proposal_id}/references/attach")
@@ -338,13 +449,20 @@ def _build_section_views(db: Session, proposal: Proposal) -> list[dict]:
         .order_by(SectionHistory.created_at.desc())
     ).scalars().all()
 
-    author_ids = {h.changed_by for h in all_history}
+    all_comments = db.execute(
+        select(ApprovalComment)
+        .where(ApprovalComment.proposal_id == proposal.id)
+        .order_by(ApprovalComment.created_at.desc())
+    ).scalars().all()
+
+    author_ids = {h.changed_by for h in all_history} | {c.created_by for c in all_comments}
     authors = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(author_ids))).scalars().all()}
 
     views = []
     for section in sections:
         history = [h for h in all_history if h.section_id == section.id]
         regenerate_count = sum(1 for h in history if h.change_type == "regenerate")
+        comments = [c for c in all_comments if c.section_key == section.section_key]
         views.append({
             "section": section,
             "title": SECTION_TITLES.get(section.section_key, section.section_key),
@@ -353,6 +471,8 @@ def _build_section_views(db: Session, proposal: Proposal) -> list[dict]:
             "regenerate_count": regenerate_count,
             "regenerate_limit": MAX_REGENERATIONS_PER_SECTION,
             "pending_manual_edit": bool(history) and history[0].change_type == "manual_edit",
+            "comments": comments,
+            "unresolved_comments": [c for c in comments if not c.resolved],
         })
     return views
 
@@ -493,4 +613,25 @@ def regenerate_section_route(
     )
     db.commit()
     logger.info("User id=%s regenerated section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
+
+
+@router.post("/{proposal_id}/comments/{comment_id}/resolve")
+def resolve_comment(
+    proposal_id: int,
+    comment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    comment = db.execute(
+        select(ApprovalComment).where(
+            ApprovalComment.id == comment_id, ApprovalComment.proposal_id == proposal.id
+        )
+    ).scalar_one_or_none()
+    if comment is not None:
+        comment.resolved = True
+        db.commit()
+        logger.info("User id=%s resolved approval comment id=%s (proposal id=%s)", user.id, comment_id, proposal.id)
     return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
