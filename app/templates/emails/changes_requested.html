@@ -1,0 +1,16 @@
+{% extends "emails/_base.html" %}
+{% block title %}Changes requested on your proposal{% endblock %}
+{% block content %}
+<p>Hi {{ salesperson_name }},</p>
+<p>{{ approver_name }} requested changes on this proposal:</p>
+<ul style="padding-left:20px; margin:12px 0;">
+  {% for item in comments %}
+  <li style="margin-bottom:6px;"><strong>{{ item.title }}:</strong> {{ item.text }}</li>
+  {% endfor %}
+</ul>
+<p>
+  <a href="{{ edit_url }}" style="display:inline-block; background-color:#B8863B; color:#FFFFFF; text-decoration:none; padding:10px 22px; border-radius:4px; font-weight:bold; font-size:14px;">
+    Review and Update
+  </a>
+</p>
+{% endblock %}

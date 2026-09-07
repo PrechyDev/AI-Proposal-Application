@@ -26,10 +26,30 @@ A FastAPI + Postgres web app where salespeople turn discovery-call notes into a 
 ```
 [Salesperson/Approver Browser] --(login, HTMX)--> [FastAPI App] --> [Postgres]
                                                         |--> [Claude API] (generation/regeneration)
-                                                        |--> [Email API] (approver notify, client send, 7-day nudge)
+                                                        |--> [Email API] (approver notify, client send, changes requested)
                                                         |--> [PDF renderer] (headless browser print)
 [Client Browser] --(no login, /view/{token})--> [FastAPI App, read-only route] --> [Postgres] (log access only)
 ```
+(The 7-day nudge is a live dashboard query read by the salesperson's own browser, not an Email API call - see §9's "Background jobs" note.)
+
+### 2a. HTMX: Retrofitted for the Section-Edit/Regenerate Interaction Only
+
+**Status: gap found and closed post-step-16.** Despite §2 naming HTMX as core architecture from the start, an audit after step 16 (prompted directly by the user asking "was HTMX used?") found it had never actually been built anywhere across all 16 steps - every interactive action was a plain `<form>` POST followed by a full-page redirect. This was never flagged as a deliberate deviation in `PROGRESS.md`; it was simply never done.
+
+**Decision on closing it: targeted, not a full retrofit.** Asked the user directly which they wanted; given no strong preference, applied the recommendation - retrofit exactly the one interaction this section's own rationale names ("edit a section, see it update, without disturbing the rest of the page"), not every form in the app. `proposal_edit.html` loads htmx.js from cdnjs; the manual-edit and regenerate forms for each section now carry both a plain `action`/`method` (unchanged fallback if JS is disabled or fails to load) and `hx-post`/`hx-target`/`hx-swap` attributes targeting just that section's own fragment. The two route handlers (`edit_section`, `regenerate_section_route`) check an `HX-Request` header and return either the one section's re-rendered fragment (HTMX) or the original full-page redirect (plain form) - covering manual edit, regeneration, the regeneration-limit error, and the manual-edit-overwrite confirmation, all scoped to just that section. Simpler actions elsewhere in the app (admin filters, reference attach/remove, mark-comment-resolved) deliberately stay plain full-page forms - revisit only if a real need for more partial-swap interactions comes up.
+
+### 2b. Visual Design System (chosen for the email templates; not yet applied to the rest of the app)
+
+**Status: chosen post-step-16, applied only to the three transactional email templates so far.** A second audit finding was that all three notification emails (approver, client delivery, changes-requested) were raw, unstyled inline-HTML f-strings - no real template file, no branding. Building real ones required an actual color/typography system, and neither this repo nor the original project brief folder had one anywhere (no logo, no brand colors). Asked the user directly; told to choose one and start with the emails, with the same system meant to be applied to the rest of the app's pages in a later pass (not part of this one).
+
+**Chosen:**
+- Primary/heading color: `#1F2D3D` (deep slate navy)
+- Accent/CTA color: `#B8863B` (muted gold)
+- Body text: `#3A4655`; muted/footer text: `#6B7280`
+- Page background: `#F7F5F2` (warm off-white) behind a white content card
+- Typography: `Georgia, 'Times New Roman', serif` for the "Koya Talent" wordmark/headings, `Arial, Helvetica, sans-serif` for body copy - deliberately no webfonts, since email clients strip `@font-face`/external stylesheets unreliably; a plain system-font stack renders consistently everywhere an email might be opened.
+
+Implemented in `app/templates/emails/_base.html` (shared layout - single-column, 560px, table-based markup with every style inline, per email-client HTML conventions) and the three templates that extend it. Not yet applied anywhere in the main app's own pages (`proposal_detail.html`, `dashboard.html`, etc., which remain unstyled bare HTML) - that's explicitly future work, per the user's own stated sequencing.
 
 ---
 

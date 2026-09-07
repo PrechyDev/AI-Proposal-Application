@@ -11,6 +11,8 @@
 </head>
 <body>
   <h1>Proposal for {{ content.proposal.client_name }} ({{ content.proposal.company_name }})</h1>
+  <p>Prepared by {{ content.proposal.salesperson_name }}<br>
+    Date: {{ content.proposal.date_of_call[:10] }}</p>
 
   <p class="no-print">
     <a href="/view/{{ token }}/pdf">Download as PDF</a>
@@ -29,5 +31,9 @@
     {% endfor %}
   </ul>
   {% endif %}
+
+  <p>Warm regards,<br>
+    {{ content.proposal.salesperson_name }}<br>
+    Koya Talent</p>
 </body>
 </html>

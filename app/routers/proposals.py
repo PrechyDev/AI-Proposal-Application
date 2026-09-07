@@ -30,7 +30,7 @@ from app.services.proposal_generation import (
     regenerate_section,
 )
 from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
-from app.templating import templates
+from app.templating import render_email, templates
 
 logger = logging.getLogger(__name__)
 
@@ -287,10 +287,12 @@ def submit_proposal(
         send_email(
             to=approver.email,
             subject=f"Proposal ready for your review: {proposal.client_name} ({proposal.company_name})",
-            html=(
-                f"<p>A proposal for <strong>{proposal.client_name}</strong> "
-                f"({proposal.company_name}) is ready for your review.</p>"
-                f'<p><a href="{review_url}">Log in and review it</a>.</p>'
+            html=render_email(
+                "approver_notification.html",
+                approver_name=approver.name,
+                client_name=proposal.client_name,
+                company_name=proposal.company_name,
+                review_url=review_url,
             ),
         )
         db.add(DeliveryLog(proposal_id=proposal.id, channel="approver_notification", status="success"))
@@ -367,12 +369,13 @@ def send_to_client(
             # they're the one with the actual client relationship.
             cc=creator.email if creator else None,
             reply_to=creator.email if creator else None,
-            subject=f"Your proposal from Koya Talent: {proposal.company_name}",
-            html=(
-                f"<p>Hi {proposal.client_name},</p>"
-                f"<p>Your proposal from Koya Talent is ready to view.</p>"
-                f'<p><a href="{view_url}">View your proposal</a>.</p>'
-                f"<p>This link stays active for 30 days.</p>"
+            subject=f"Proposal for {proposal.company_name}",
+            html=render_email(
+                "client_delivery.html",
+                client_name=proposal.client_name,
+                company_name=proposal.company_name,
+                view_url=view_url,
+                salesperson_name=creator.name if creator else "Koya Talent",
             ),
         )
         db.add(DeliveryLog(proposal_id=proposal.id, channel="client_delivery", status="success"))
@@ -588,6 +591,7 @@ def _render_edit(
     status_code: int = 200,
     pending_section_key: str | None = None,
     pending_comment: str = "",
+    pending_is_overwrite: bool = False,
 ):
     return templates.TemplateResponse(
         request=request,
@@ -598,9 +602,45 @@ def _render_edit(
             "error": error,
             "pending_section_key": pending_section_key,
             "pending_comment": pending_comment,
+            "pending_is_overwrite": pending_is_overwrite,
             "attached_references": _get_attached_references(proposal, db),
         },
         status_code=status_code,
+    )
+
+
+def _is_htmx(request: Request) -> bool:
+    return request.headers.get("hx-request") == "true"
+
+
+def _render_section_fragment(
+    request: Request,
+    db: Session,
+    proposal: Proposal,
+    section_key: str,
+    section_error: str | None = None,
+    pending_overwrite: bool = False,
+    pending_comment: str = "",
+):
+    """Renders just one section's block (app/templates/_section_fragment.html)
+    for an HTMX swap - the spec's own reason for choosing HTMX (section 2:
+    "edit a section, see it update, without disturbing the rest of the
+    page"). Plain (non-HTMX) form submits never hit this - they keep the
+    original full-page redirect via `_render_edit`, so the app still works
+    with JS disabled.
+    """
+    views = _build_section_views(db, proposal)
+    view = next(v for v in views if v["section"].section_key == section_key)
+    return templates.TemplateResponse(
+        request=request,
+        name="_section_fragment.html",
+        context={
+            "proposal": proposal,
+            "view": view,
+            "section_error": section_error,
+            "pending_overwrite": pending_overwrite,
+            "pending_comment": pending_comment,
+        },
     )
 
 
@@ -631,6 +671,10 @@ def edit_section(
 
     new_content = content.strip()
     if not new_content:
+        if _is_htmx(request):
+            return _render_section_fragment(
+                request, db, proposal, section_key, section_error="Section content can't be empty."
+            )
         return _render_edit(request, db, proposal, error="Section content can't be empty.", status_code=400)
 
     old_content = section.content
@@ -650,6 +694,8 @@ def edit_section(
     )
     db.commit()
     logger.info("User id=%s manually edited section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
+    if _is_htmx(request):
+        return _render_section_fragment(request, db, proposal, section_key)
     return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
 
 
@@ -675,21 +721,31 @@ def regenerate_section_route(
 
     regenerate_count = sum(1 for h in history if h.change_type == "regenerate")
     if regenerate_count >= MAX_REGENERATIONS_PER_SECTION:
+        limit_error = (
+            f"'{title}' has reached its regeneration limit ({MAX_REGENERATIONS_PER_SECTION}). "
+            f"Edit it manually instead."
+        )
+        if _is_htmx(request):
+            return _render_section_fragment(request, db, proposal, section_key, section_error=limit_error)
         return _render_edit(
-            request, db, proposal,
-            error=f"'{title}' has reached its regeneration limit ({MAX_REGENERATIONS_PER_SECTION}). "
-            f"Edit it manually instead.",
-            status_code=400,
+            request, db, proposal, error=limit_error, status_code=400, pending_section_key=section_key
         )
 
     pending_manual_edit = bool(history) and history[0].change_type == "manual_edit"
     if pending_manual_edit and confirm_overwrite != "yes":
+        overwrite_error = f"'{title}' has a manual edit that regenerating would overwrite."
+        if _is_htmx(request):
+            return _render_section_fragment(
+                request, db, proposal, section_key,
+                section_error=overwrite_error, pending_overwrite=True, pending_comment=comment,
+            )
         return _render_edit(
             request, db, proposal,
-            error=f"'{title}' has a manual edit that regenerating would overwrite.",
+            error=overwrite_error,
             status_code=409,
             pending_section_key=section_key,
             pending_comment=comment,
+            pending_is_overwrite=True,
         )
 
     try:
@@ -698,10 +754,11 @@ def regenerate_section_route(
         logger.warning(
             "Regeneration failed for section id=%s (proposal id=%s): %s", section.id, proposal.id, exc
         )
+        generation_error = "Regeneration failed - the AI service did not return a usable section. Please try again."
+        if _is_htmx(request):
+            return _render_section_fragment(request, db, proposal, section_key, section_error=generation_error)
         return _render_edit(
-            request, db, proposal,
-            error="Regeneration failed - the AI service did not return a usable section. Please try again.",
-            status_code=502,
+            request, db, proposal, error=generation_error, status_code=502, pending_section_key=section_key
         )
 
     old_content = section.content
@@ -719,6 +776,8 @@ def regenerate_section_route(
     )
     db.commit()
     logger.info("User id=%s regenerated section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
+    if _is_htmx(request):
+        return _render_section_fragment(request, db, proposal, section_key)
     return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
 
 

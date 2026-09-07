@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Koya Talent{% endblock %}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#F7F5F2; font-family:Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F7F5F2; padding:32px 16px;">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px; width:100%; background-color:#FFFFFF; border-radius:6px;">
+        <tr>
+          <td style="padding:28px 32px 20px 32px; border-bottom:3px solid #B8863B;">
+            <span style="font-family:Georgia, 'Times New Roman', serif; font-size:22px; color:#1F2D3D; font-weight:bold;">Koya Talent</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px; color:#3A4655; font-size:15px; line-height:1.6;">
+            {% block content %}{% endblock %}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 32px 24px 32px; border-top:1px solid #E5E1DA; color:#6B7280; font-size:12px; line-height:1.5;">
+            {% block footer %}This is an automated message from Koya Talent's proposal system.{% endblock %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

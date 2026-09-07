@@ -22,7 +22,7 @@ from app.models import (
 )
 from app.services.email import EmailError, send_email
 from app.services.proposal_generation import SECTION_TITLES
-from app.templating import templates
+from app.templating import render_email, templates
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +52,17 @@ def _get_references(proposal: Proposal, db: Session) -> list[ReferenceFile]:
     ).scalars().all()
 
 
-def _build_snapshot_content(proposal: Proposal, sections: list[Section], references: list[ReferenceFile]) -> dict:
+def _build_snapshot_content(
+    proposal: Proposal, sections: list[Section], references: list[ReferenceFile], salesperson_name: str
+) -> dict:
     """Frozen "what the client saw" record (spec section 3/5) - immutable
-    once written, never edited even if the proposal is later reopened."""
+    once written, never edited even if the proposal is later reopened.
+
+    `salesperson_name` is captured here (not read live from `created_by` at
+    view time) so a frozen snapshot's attribution can never change out from
+    under a client link - e.g. if the creator's account is later renamed or
+    deactivated, matching this record's own "immutable once written" rule.
+    """
     return {
         "proposal": {
             "client_name": proposal.client_name,
@@ -67,6 +75,7 @@ def _build_snapshot_content(proposal: Proposal, sections: list[Section], referen
             "recommended_services": proposal.recommended_services,
             "proposed_timeline": proposal.proposed_timeline,
             "estimated_pricing": proposal.estimated_pricing,
+            "salesperson_name": salesperson_name,
         },
         "sections": [
             {
@@ -147,6 +156,7 @@ def approve_proposal(
         )
 
     references = _get_references(proposal, db)
+    creator = db.get(User, proposal.created_by)
     next_version = (
         db.execute(
             select(func.max(Snapshot.version_number)).where(Snapshot.proposal_id == proposal.id)
@@ -156,7 +166,9 @@ def approve_proposal(
         Snapshot(
             proposal_id=proposal.id,
             version_number=next_version,
-            full_content_json=_build_snapshot_content(proposal, sections, references),
+            full_content_json=_build_snapshot_content(
+                proposal, sections, references, creator.name if creator else "Koya Talent"
+            ),
         )
     )
 
@@ -229,17 +241,19 @@ def request_changes(
     if creator is not None:
         settings = get_settings()
         edit_url = f"{settings.app_base_url}/proposals/{proposal.id}/edit"
-        comment_list = "".join(
-            f"<li><strong>{SECTION_TITLES.get(key, key)}:</strong> {text}</li>" for key, text in provided.items()
-        )
+        comments_for_email = [
+            {"title": SECTION_TITLES.get(key, key), "text": text} for key, text in provided.items()
+        ]
         try:
             send_email(
                 to=creator.email,
                 subject=f"Changes requested on your proposal: {proposal.client_name} ({proposal.company_name})",
-                html=(
-                    f"<p>{user.name} requested changes on this proposal:</p>"
-                    f"<ul>{comment_list}</ul>"
-                    f'<p><a href="{edit_url}">Review and update it</a>.</p>'
+                html=render_email(
+                    "changes_requested.html",
+                    salesperson_name=creator.name,
+                    approver_name=user.name,
+                    comments=comments_for_email,
+                    edit_url=edit_url,
                 ),
             )
             db.add(DeliveryLog(proposal_id=proposal.id, channel="changes_requested_notification", status="success"))

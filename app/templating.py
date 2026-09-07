@@ -21,3 +21,12 @@ def render_markdown(text: str) -> Markup:
 
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["markdown"] = render_markdown
+
+
+def render_email(template_name: str, **context) -> str:
+    """Renders an email template (app/templates/emails/*.html) to an HTML
+    string. Plain `.render()`, not `TemplateResponse` - there's no `Request`
+    object in an email-sending code path, and these templates never need
+    Starlette's request-bound globals (url_for etc.).
+    """
+    return templates.env.get_template(f"emails/{template_name}").render(**context)

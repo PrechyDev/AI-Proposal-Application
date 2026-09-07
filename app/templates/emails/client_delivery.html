@@ -1,0 +1,17 @@
+{% extends "emails/_base.html" %}
+{% block title %}Proposal for {{ company_name }}{% endblock %}
+{% block content %}
+<p>Hi {{ client_name }},</p>
+<p>Thanks again for taking the time to speak with us. Based on our conversation, we have put together a customized proposal for your review.</p>
+<p>
+  <a href="{{ view_url }}" style="display:inline-block; background-color:#B8863B; color:#FFFFFF; text-decoration:none; padding:10px 22px; border-radius:4px; font-weight:bold; font-size:14px;">
+    View Your Proposal
+  </a>
+</p>
+<p>This document outlines the project scope, timeline, pricing details, and recommended approach. This link stays active for 30 days.</p>
+<p>If you have any questions or would like to make adjustments, feel free to reach out. We are happy to iterate with you.</p>
+<p>Looking forward to hearing your thoughts.</p>
+<p>Best regards,<br>
+  {{ salesperson_name }}<br>
+  Koya Talent</p>
+{% endblock %}
