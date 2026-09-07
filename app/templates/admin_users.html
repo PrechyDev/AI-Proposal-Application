@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>User Management — AI Proposal Application</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>User Management</h1>
+  {% if error %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+
+  <table border="1" cellpadding="6">
+    <tr>
+      <th>Name</th><th>Email</th><th>Active</th>
+      <th colspan="4">Permissions</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ "Yes" if u.is_active else "No" }}</td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/permissions" style="display:inline;">
+          <label><input type="checkbox" name="can_create" {% if u.can_create %}checked{% endif %}> Can create</label>
+          <label><input type="checkbox" name="can_approve" {% if u.can_approve %}checked{% endif %}> Can approve</label>
+          <label><input type="checkbox" name="is_admin" {% if u.is_admin %}checked{% endif %}> Admin</label>
+          <button type="submit">Save</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/users/{{ u.id }}/toggle-active" style="display:inline;">
+          <button type="submit">{{ "Deactivate" if u.is_active else "Activate" }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h2>Create User</h2>
+  <form method="post" action="/admin/users">
+    <label>Name <input type="text" name="name" required></label><br>
+    <label>Email <input type="email" name="email" required></label><br>
+    <label>Password <input type="password" name="password" required minlength="8"></label><br>
+    <label><input type="checkbox" name="can_create"> Can create proposals</label>
+    <label><input type="checkbox" name="can_approve"> Can approve proposals</label>
+    <label><input type="checkbox" name="is_admin"> Admin</label><br>
+    <button type="submit">Create</button>
+  </form>
+</body>
+</html>

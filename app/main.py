@@ -13,6 +13,7 @@ from app.auth import require_user
 from app.config import get_settings
 from app.db import engine, get_db
 from app.models import User
+from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AI Proposal Application", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, same_site="lax")
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 templates = Jinja2Templates(directory="app/templates")
 

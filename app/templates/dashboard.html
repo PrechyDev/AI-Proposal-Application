@@ -12,6 +12,9 @@
     <li>Can approve proposals: {{ user.can_approve }}</li>
     <li>Admin: {{ user.is_admin }}</li>
   </ul>
+  {% if user.is_admin %}
+  <p><a href="/admin/users">Manage users</a></p>
+  {% endif %}
   <form method="post" action="/logout">
     <button type="submit">Log out</button>
   </form>
