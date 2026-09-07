@@ -273,11 +273,13 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 
 ## 9. Deployment Decisions
 
-- **Hosting**: a platform with minimal ops overhead given the timeline — e.g. Railway or Render for the FastAPI app (both support Postgres add-ons and env-based secrets easily), rather than self-managing a VM.
+- **Hosting: Decided: Render**, over Railway, on a $0-budget basis — Railway retired its permanent free tier (a one-time trial credit, then a paid Hobby plan), while Render's free web-service tier is permanent (750 instance-hours/month, one always-on service fits inside that), includes a free custom domain with managed TLS, and (like Railway) supports a plain Dockerfile deploy — necessary here since Playwright's headless Chromium (§2/step 11) needs real system libraries (`libnss3`, `libatk-bridge2.0-0`, etc.) that only a Docker-based build, not an auto-detected Python buildpack, can install via `playwright install --with-deps`. Known trade-off of the free tier: the service sleeps after 15 minutes idle, with a 30-50s cold start on the next request — since PDF export's own Playwright timeout is 30s, a cold container could make the *first* PDF request after a period of inactivity fail or run close to that timeout; upgrading to a paid always-on instance later removes this, but wasn't justified for this build's budget.
 - **Database**: Supabase Postgres, reusing the same project/instance from Week 2 rather than a separate one — Supabase's free tier caps a personal account at two projects, so a single shared instance is used as a central Postgres host for multiple Koya projects rather than one project per app. To keep this app's tables fully isolated from other projects sharing the instance (schema-level separation, not a separate database), all of this app's tables live in a dedicated `proposal_app` Postgres schema rather than the default `public` schema — see §3.
 - **File storage**: **Decided: Supabase Storage** (not a separate S3-compatible service) — reuses the Supabase project already in use for Postgres rather than standing up a new external account, and matches the spec's own lean toward it. Reference files and generated PDFs go there, not the app's local disk, which doesn't survive redeploys on most PaaS platforms.
-- **Secrets**: Claude API key, email API key, DB URL — all as environment variables, never committed.
-- **Domain for client links**: a short, clean subdomain (e.g. `proposals.yourcompany.com`) reads more trustworthy in a client's inbox than a raw platform-generated URL.
+- **Secrets**: Claude API key, email API key, DB URL — all as environment variables, never committed. `render.yaml` (§14 step 16) declares every required variable's *name* with `sync: false`, so Render prompts for each one's real value in its dashboard rather than storing them in the repo.
+- **Domain for client links**: a short, clean subdomain (e.g. `proposals.yourcompany.com`) reads more trustworthy in a client's inbox than a raw platform-generated URL. Render's free tier includes custom-domain support with managed TLS at no extra cost, so once a domain is registered, attaching it is a Render-dashboard step (add the domain, point its DNS at Render per the CNAME/A record Render provides), not an infra decision — registering the domain itself remains on the human (§13).
+- **Deployment artifacts (§14 step 16)**: `Dockerfile` (Playwright/Chromium system deps via `--with-deps`, `poetry install`, then `docker-entrypoint.sh`), `docker-entrypoint.sh` (`alembic upgrade head` before starting `uvicorn`, so every deploy self-migrates rather than needing a manual migration step), `.dockerignore`, and `render.yaml` (Render's Blueprint format — one `runtime: docker` web service, `healthCheckPath: /health` using the health route already built in step 3, and every secret declared by name only).
+- **Background jobs**: still none (§7/§14's 7-day nudge stays a live dashboard query, per the open-items note carried since step 13) — Render Cron Jobs aren't available on the free tier, and the live-query approach already works without needing one; revisit only if a real scheduled job becomes worth paying for.
 
 ---
 
@@ -352,7 +354,7 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 
 ## 13. What You Need to Do Yourself (not buildable by Claude Code alone)
 
-- Create accounts and get API keys: Anthropic (Claude API), email provider (Brevo — see §8c for why, over Resend/SendGrid), hosting platform, Supabase (or chosen Postgres host)
+- Create accounts and get API keys: Anthropic (Claude API), email provider (Brevo — see §8c for why, over Resend/SendGrid), hosting platform (Render — see §9; connect this repo, enter the real secret values `render.yaml` declares by name), Supabase (or chosen Postgres host)
 - Decide and register the domain/subdomain for client-facing links
 - Write 2–3 realistic sample intake inputs (including one with intentionally filler/missing fields) to use as your test data and for the "generated proposal sample" deliverable
 - Create your own test user accounts for each role (admin, salesperson, approver) once the app is deployed

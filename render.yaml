@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: ai-proposal-application
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Secrets - values are never stored in this file (sync: false means
+      # "set manually in the Render dashboard"), matching this repo's own
+      # rule of never committing real credentials (see CLAUDE.md).
+      - key: SUPABASE_URL
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: SESSION_SECRET_KEY
+        sync: false
+      - key: SUPABASE_PROJECT_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: "Koya Talent"
+      # Set to this service's actual onrender.com URL first; switch to the
+      # final custom domain (spec section 9) once one is attached - every
+      # email link and the PDF renderer's page.goto() target both come
+      # from this one value (app/config.py's app_base_url).
+      - key: APP_BASE_URL
+        sync: false
