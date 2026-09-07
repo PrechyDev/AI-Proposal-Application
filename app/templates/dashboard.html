@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Dashboard — AI Proposal Application</title>
+</head>
+<body>
+  <h1>Welcome, {{ user.name }}</h1>
+  <ul>
+    <li>Email: {{ user.email }}</li>
+    <li>Can create proposals: {{ user.can_create }}</li>
+    <li>Can approve proposals: {{ user.can_approve }}</li>
+    <li>Admin: {{ user.is_admin }}</li>
+  </ul>
+  <form method="post" action="/logout">
+    <button type="submit">Log out</button>
+  </form>
+</body>
+</html>

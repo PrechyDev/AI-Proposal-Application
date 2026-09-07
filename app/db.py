@@ -1,10 +1,14 @@
+import logging
 from collections.abc import Generator
 
 from sqlalchemy import MetaData, create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -34,5 +38,9 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except SQLAlchemyError:
+        logger.exception("Database session error, rolling back")
+        db.rollback()
+        raise
     finally:
         db.close()
