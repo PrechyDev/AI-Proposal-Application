@@ -21,7 +21,23 @@
     <li>Estimated Pricing: {{ proposal.estimated_pricing }}</li>
   </ul>
 
+  {% if error %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+
   <h2>Generated Proposal</h2>
-  <p><em>No sections generated yet — Claude generation lands in build step 6.</em></p>
+  {% if sections %}
+    {% for section in sections %}
+    <h3>{{ section.section_key.replace('_', ' ').title() }}
+      {% if section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
+    </h3>
+    <div>{{ section.content }}</div>
+    {% endfor %}
+  {% else %}
+    <p><em>No sections generated yet.</em></p>
+    <form method="post" action="/proposals/{{ proposal.id }}/generate">
+      <button type="submit">Generate Proposal</button>
+    </form>
+  {% endif %}
 </body>
 </html>

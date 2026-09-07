@@ -5,11 +5,13 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
 from app.db import get_db
-from app.models import Proposal, User
+from app.models import Proposal, Section, User
+from app.services.proposal_generation import SECTION_KEYS, GenerationError, generate_proposal_sections
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,27 @@ def create_proposal(
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
+def _get_viewable_proposal(proposal_id: int, db: Session, user: User) -> Proposal:
+    proposal = db.get(Proposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal not found")
+    if proposal.created_by != user.id and not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted to view this proposal")
+    return proposal
+
+
+def _render_detail(request: Request, db: Session, proposal: Proposal, error: str | None = None, status_code: int = 200):
+    sections = db.execute(
+        select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
+    ).scalars().all()
+    return templates.TemplateResponse(
+        request=request,
+        name="proposal_detail.html",
+        context={"proposal": proposal, "sections": sections, "error": error},
+        status_code=status_code,
+    )
+
+
 @router.get("/{proposal_id}")
 def view_proposal(
     proposal_id: int,
@@ -123,11 +146,49 @@ def view_proposal(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    proposal = db.get(Proposal, proposal_id)
-    if proposal is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal not found")
-    if proposal.created_by != user.id and not user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted to view this proposal")
-    return templates.TemplateResponse(
-        request=request, name="proposal_detail.html", context={"proposal": proposal}
-    )
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    return _render_detail(request, db, proposal)
+
+
+@router.post("/{proposal_id}/generate")
+def generate_sections(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+
+    existing_count = db.execute(
+        select(Section).where(Section.proposal_id == proposal.id)
+    ).scalars().first()
+    if existing_count is not None:
+        return _render_detail(
+            request, db, proposal,
+            error="This proposal already has generated sections. Use per-section regenerate to update them.",
+            status_code=400,
+        )
+
+    try:
+        generated = generate_proposal_sections(proposal)
+    except GenerationError:
+        return _render_detail(
+            request, db, proposal,
+            error="Generation failed - the AI service did not return a usable proposal. Please try again.",
+            status_code=502,
+        )
+
+    for sort_order, key in enumerate(SECTION_KEYS):
+        section_output = getattr(generated, key)
+        db.add(
+            Section(
+                proposal_id=proposal.id,
+                section_key=key,
+                content=section_output.content,
+                sort_order=sort_order,
+                has_gap_marker=section_output.has_gap,
+            )
+        )
+    db.commit()
+    logger.info("Generated %d sections for proposal id=%s", len(SECTION_KEYS), proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
