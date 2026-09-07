@@ -17,7 +17,7 @@ A FastAPI + Postgres web app where salespeople turn discovery-call notes into a 
 - Frontend: **Jinja2 templates + HTMX** — no separate SPA/build step; HTMX handles partial-page updates (e.g. regenerating one section) with plain backend endpoints
 - Database: **Postgres** (e.g. Supabase, consistent with your Week 2 project)
 - PDF export: **headless-browser print-to-PDF** (e.g. Playwright's PDF function) run against the *same* HTML template used for the in-app preview — this guarantees the preview a salesperson reviews is pixel-identical to what the client downloads, because there's only one template, not two parallel renderers
-- Email delivery: transactional email API (e.g. Resend or SendGrid) for both approver notifications and client delivery
+- Email delivery: transactional email API — **Brevo** (see §8c for why, over the originally-considered Resend/SendGrid) — for approver notifications, client delivery, and changes-requested notifications (§8d)
 - AI: **Claude API** (model choice in §8)
 
 **Why FastAPI + Jinja/HTMX over a separate React frontend**: your core interaction — edit a section, see it update, without disturbing the rest of the page — is exactly what HTMX partial-swaps are built for, with one backend and one template layer. A separate frontend would only pay off if you needed complex client-side state, which this doesn't.
@@ -235,6 +235,40 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 - Two lighter alternatives were also considered and rejected: extracting text/images locally via pure-Python libraries (`python-docx`/`python-pptx`/`openpyxl`) — layout/positioning wouldn't be preserved, a smaller version of the same fidelity concern that ruled out `pypdf` for PDFs; and converting to PDF server-side via LibreOffice headless — pixel-perfect, but requires a system-level binary that isn't pip-installable, changing the deployment target from a stock Python buildpack to a custom Docker image (a §9/step 16 concern, not a library choice).
 - Given all three routes carry a real cost (new API surface, fidelity loss, or infra change) for a format this app can simply ask the user to convert instead, the decision was to not support Office formats at all rather than pick the least-bad option.
 
+### 8c. Email Provider: Brevo over Resend/SendGrid
+
+**Status: implemented post-step-14** (see `PROGRESS.md`'s post-step-14 follow-up). This spec originally named Resend/SendGrid only as examples (§2); Resend was the provider actually built and verified first (steps 9/12), then replaced by Brevo once the real requirement — send to arbitrary real recipients, on no budget (§8d) — collided with a hard limitation Resend's free tier has and Brevo's doesn't.
+
+**Why the switch, not just "Brevo is better":** Resend's real-send integration was verified working in step 9, but step 12 hit its actual limit — Resend's free tier hard-blocks sending to anyone but the account's own verified email until a domain is DNS-verified (SPF/DKIM/DMARC), so a proposal addressed to a real client got a `403` every time. That's not a quota problem to ration around — it's a functional block on the app's core job (emailing actual clients) that only lifts once a domain is verified, which costs nothing in dollars but does cost DNS access and setup time this project didn't want to gate on.
+
+**What was confirmed about each option before deciding (not assumed):**
+
+| | Free tier | Real-recipient sending, pre-domain-verification | Multi-recipient (to/cc/replyTo) in one call |
+|---|---|---|---|
+| **Resend** | 3,000/mo, capped 100/day, permanent, no card | **Blocked** — 403 to anyone but the account owner until a domain is DNS-verified ([account quotas/limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits)) | Supported, but blocked by the restriction above in practice |
+| **SendGrid** | **None for new signups** — permanent free tier retired May 27, 2025; new accounts get a 60-day trial (100/day), then plans start at $19.95/mo ([SendGrid free-plan status](https://costbench.com/software/email-api/sendgrid/free-plan/)) | N/A — not free past 60 days | Supported |
+| **Brevo** | 300/day (~9,000/mo), permanent, no card ([Brevo email API](https://www.brevo.com/features/email-api/)) | **Allowed** — verifying one sender address (a 6-digit code, no DNS) is enough to send to any recipient; full domain authentication is recommended for deliverability but isn't a functional gate ([domain authentication FAQ](https://help.brevo.com/hc/en-us/articles/17286219877778-FAQs-About-domain-authentication-Brevo-code-DKIM-DMARC)) | Supported natively — `SendSmtpEmail` has first-class `to`/`cc`/`bcc`/`replyTo` fields ([send a transactional email](https://developers.brevo.com/docs/send-a-transactional-email)) |
+
+**Decision: Brevo**, on two points that directly gate this app's requirements, not general provider preference:
+1. **It's the only one of the three where a real client can actually receive an email on a $0 budget without a DNS/domain step first** — SendGrid's free tier no longer exists in a form that reaches past 60 days, and Resend's free tier exists but functionally can't email a real client until a domain is verified, which is exactly the wall step 12 hit.
+2. **Its `to`/`cc`/`replyTo` fields are all first-class in one API call**, which is what the central-inbox/CC/Reply-To architecture (§8d) needed — no separate call or workaround required to CC a salesperson and redirect replies at the same time.
+
+Domain authentication is still worth doing on Brevo eventually for deliverability (fewer spam-folder landings, especially at Gmail/Yahoo/Microsoft) — but unlike Resend, it's an optimization to do later, not a blocker to get real sending working today.
+
+### 8d. Email Architecture: Central Inbox, CC/Reply-To, and Why Each of the Three Flows Exists
+
+**Status: implemented post-step-14.** This spec's original persona flows (§6) named *that* an approver gets emailed and a client gets emailed, but not the sending architecture behind it. The architecture below — and the third flow, changes-requested notifications, which didn't exist before this — was added once the gap became concrete: every proposal-related email now sends from one central address (`EMAIL_FROM_ADDRESS`), never a per-salesperson address, with `cc`/`reply_to` set per-call depending on who the email is about.
+
+**Why a central address instead of sending "as" each salesperson:** the original assumption was that each salesperson's own email would appear as the sender. In practice, a transactional email API can't actually send *from* an individual employee's personal or Google Workspace inbox without that person's mailbox being individually configured as a verified sender/domain owner in the provider — a real setup burden per hire, and a fragile one (an employee leaving means rotating that config). One verified central sender solves this once, for every salesperson, forever — and every recipient still sees exactly whose proposal it is because the subject line, body, and (for client delivery) CC name the specific salesperson.
+
+**The three flows, and why each one is shaped the way it is:**
+
+1. **Approver notification** (salesperson submits → central inbox emails the assigned approver). Plain send from the central address, no CC/reply-to override — the approver's job is to act inside the app (review, approve, or request changes), not to reply to the email itself, so there's no inbox the reply needs to reach beyond the approver's own.
+2. **Client delivery** (approver approves → central inbox emails the client, **CC's the salesperson who created the proposal**, **Reply-To set to that salesperson**). The client needs to hear from a legitimate, deliverable business address, not an individual's; the salesperson is CC'd so they see exactly what the client received, when; and replies route to the salesperson specifically — not the shared inbox — because they're the one with the actual client relationship and the context to answer a follow-up. Nobody else at Koya Talent should be the one fielding "can we adjust the timeline?" from a client they've never spoken to.
+3. **Changes-requested notification** (approver requests changes → central inbox emails the proposal's creator with the specific section comments and a link back to the edit page). This flow didn't exist before this change — a salesperson previously found out only by checking the dashboard, with no push notice at all. It closes that gap the same way approval already worked: the person who needs to act (here, the salesperson revising the proposal) gets told the moment there's something to act on, not left to notice it themselves.
+
+**Why `cc`/`reply_to` are per-call parameters, not global settings:** unlike `EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`, which really are fixed, app-wide config, who gets CC'd and who a reply should reach depends on *which proposal* the email is about — specifically, its creator. Baking that into global settings would make every email CC the same person regardless of who actually owns the proposal; it has to be resolved per-send from the proposal's own data.
+
 ---
 
 ## 9. Deployment Decisions
@@ -318,7 +352,7 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 
 ## 13. What You Need to Do Yourself (not buildable by Claude Code alone)
 
-- Create accounts and get API keys: Anthropic (Claude API), email provider (Resend/SendGrid), hosting platform, Supabase (or chosen Postgres host)
+- Create accounts and get API keys: Anthropic (Claude API), email provider (Brevo — see §8c for why, over Resend/SendGrid), hosting platform, Supabase (or chosen Postgres host)
 - Decide and register the domain/subdomain for client-facing links
 - Write 2–3 realistic sample intake inputs (including one with intentionally filler/missing fields) to use as your test data and for the "generated proposal sample" deliverable
 - Create your own test user accounts for each role (admin, salesperson, approver) once the app is deployed

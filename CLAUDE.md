@@ -125,7 +125,7 @@ Already seeded in the dev DB (all password `test-password-123`):
 | `approver@test.local` | can_approve |
 | `approver2@test.local` | can_approve (added in step 9, specifically to test "a can_approve user who isn't the assigned approver gets 403") |
 | `nonadmin@test.local` | deactivated (for testing the deactivated-login-blocked case) |
-| `preciousrobinsonokafor@gmail.com` (id 7) | can_approve - the user's own real email, used only to verify a real Resend send (sandbox mode only delivers to the account owner's own address until a custom domain is verified). Don't repurpose for other tests; it's the one address real sends actually reach right now. |
+| `preciousrobinsonokafor@gmail.com` (id 7) | can_approve - the user's own real email, used to verify real sends throughout steps 9-13 while Resend was the provider, and again post-step-14 for all three real Brevo flows (see `PROGRESS.md`'s post-step-14 follow-up) - confirmed working as a `to`/`cc` recipient under Brevo, no further setup needed. |
 
 Bootstrap CLI for creating more: `poetry run python -m app.scripts.create_user
 --name ... --email ... --password ... [--admin] [--can-create] [--can-approve]`.
@@ -187,3 +187,20 @@ keep showing up in `sales@test.local`'s "Needs a Nudge" dashboard section
 indefinitely; that's expected, not a bug, don't "fix" it by resetting the
 timestamp unless you're done using it as a nudge example. Id 24 ("Warehouse
 Gamma") is unopened but sent moments ago — deliberately too recent to nudge on.
+
+**Provider note for all of the above:** every "Resend" reference in steps 9-13's
+test data (real sends, sandbox 403s, etc.) is accurate history of what was true
+in those steps. Resend has since been fully replaced by Brevo (see `PROGRESS.md`'s
+post-step-14 follow-up) - don't expect a fresh Resend key to do anything, and
+don't be surprised that `app/services/email.py` no longer talks to Resend's API
+at all.
+
+Post-step-14 real Brevo verification added proposals 29-31, all sent to
+`preciousrobinsonokafor@gmail.com` (id 7): id 29 ("Brevo Flow1 ApproverNotify")
+is `pending_approval` (real approver-notification email confirmed, real send
+never continued past that point). Id 30 ("Brevo Flow2 ClientDelivery") is fully
+`sent` with `cc`/`reply_to` set to `sales@test.local` - a live example of the
+new central-inbox/CC/Reply-To architecture actually working. Id 31 ("Brevo
+Flow3 ChangesRequested") is `changes_requested` - the new notification's first
+real successful send. All three have `delivery_logs` rows with
+`status="success"` from Brevo's real API.

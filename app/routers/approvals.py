@@ -8,8 +8,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_can_approve
+from app.config import get_settings
 from app.db import get_db
-from app.models import ApprovalComment, Proposal, ProposalReference, ReferenceFile, Section, Snapshot, User
+from app.models import (
+    ApprovalComment,
+    DeliveryLog,
+    Proposal,
+    ProposalReference,
+    ReferenceFile,
+    Section,
+    Snapshot,
+    User,
+)
+from app.services.email import EmailError, send_email
 from app.services.proposal_generation import SECTION_TITLES
 from app.templating import templates
 
@@ -210,4 +221,36 @@ def request_changes(
         "User id=%s requested changes on proposal id=%s (%d section comment(s))",
         user.id, proposal.id, len(provided),
     )
+
+    # created_by is a required FK, so `creator` is never actually None in
+    # practice - the guard just avoids emailing the client if that ever
+    # somehow weren't true, rather than falling back to some other address.
+    creator = db.get(User, proposal.created_by)
+    if creator is not None:
+        settings = get_settings()
+        edit_url = f"{settings.app_base_url}/proposals/{proposal.id}/edit"
+        comment_list = "".join(
+            f"<li><strong>{SECTION_TITLES.get(key, key)}:</strong> {text}</li>" for key, text in provided.items()
+        )
+        try:
+            send_email(
+                to=creator.email,
+                subject=f"Changes requested on your proposal: {proposal.client_name} ({proposal.company_name})",
+                html=(
+                    f"<p>{user.name} requested changes on this proposal:</p>"
+                    f"<ul>{comment_list}</ul>"
+                    f'<p><a href="{edit_url}">Review and update it</a>.</p>'
+                ),
+            )
+            db.add(DeliveryLog(proposal_id=proposal.id, channel="changes_requested_notification", status="success"))
+        except EmailError as exc:
+            logger.warning("Changes-requested notification email failed for proposal id=%s: %s", proposal.id, exc)
+            db.add(
+                DeliveryLog(
+                    proposal_id=proposal.id, channel="changes_requested_notification", status="failed",
+                    error_message=str(exc),
+                )
+            )
+        db.commit()
+
     return RedirectResponse(url=f"/proposals/{proposal.id}/approve", status_code=303)
