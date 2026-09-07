@@ -221,7 +221,7 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 
 - **Hosting**: a platform with minimal ops overhead given the timeline — e.g. Railway or Render for the FastAPI app (both support Postgres add-ons and env-based secrets easily), rather than self-managing a VM.
 - **Database**: Supabase Postgres, reusing the same project/instance from Week 2 rather than a separate one — Supabase's free tier caps a personal account at two projects, so a single shared instance is used as a central Postgres host for multiple Koya projects rather than one project per app. To keep this app's tables fully isolated from other projects sharing the instance (schema-level separation, not a separate database), all of this app's tables live in a dedicated `proposal_app` Postgres schema rather than the default `public` schema — see §3.
-- **File storage**: reference files and generated PDFs should go to object storage (Supabase Storage or S3-compatible), not the app's local disk — local disk doesn't survive redeploys on most PaaS platforms.
+- **File storage**: **Decided: Supabase Storage** (not a separate S3-compatible service) — reuses the Supabase project already in use for Postgres rather than standing up a new external account, and matches the spec's own lean toward it. Reference files and generated PDFs go there, not the app's local disk, which doesn't survive redeploys on most PaaS platforms.
 - **Secrets**: Claude API key, email API key, DB URL — all as environment variables, never committed.
 - **Domain for client links**: a short, clean subdomain (e.g. `proposals.yourcompany.com`) reads more trustworthy in a client's inbox than a raw platform-generated URL.
 
