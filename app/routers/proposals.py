@@ -10,8 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
 from app.db import get_db
-from app.models import Proposal, Section, User
-from app.services.proposal_generation import SECTION_KEYS, GenerationError, generate_proposal_sections
+from app.models import Proposal, Section, SectionHistory, User
+from app.services.proposal_generation import (
+    MAX_REGENERATIONS_PER_SECTION,
+    SECTION_KEYS,
+    SECTION_TITLES,
+    GenerationError,
+    generate_proposal_sections,
+    regenerate_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -192,3 +199,180 @@ def generate_sections(
     db.commit()
     logger.info("Generated %d sections for proposal id=%s", len(SECTION_KEYS), proposal.id)
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+def _get_section(proposal: Proposal, section_key: str, db: Session) -> Section:
+    section = db.execute(
+        select(Section).where(Section.proposal_id == proposal.id, Section.section_key == section_key)
+    ).scalar_one_or_none()
+    if section is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Section not found")
+    return section
+
+
+def _build_section_views(db: Session, proposal: Proposal) -> list[dict]:
+    sections = db.execute(
+        select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
+    ).scalars().all()
+
+    all_history = db.execute(
+        select(SectionHistory)
+        .where(SectionHistory.section_id.in_([s.id for s in sections]))
+        .order_by(SectionHistory.created_at.desc())
+    ).scalars().all()
+
+    author_ids = {h.changed_by for h in all_history}
+    authors = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(author_ids))).scalars().all()}
+
+    views = []
+    for section in sections:
+        history = [h for h in all_history if h.section_id == section.id]
+        regenerate_count = sum(1 for h in history if h.change_type == "regenerate")
+        views.append({
+            "section": section,
+            "title": SECTION_TITLES.get(section.section_key, section.section_key),
+            "history": history,
+            "authors": authors,
+            "regenerate_count": regenerate_count,
+            "regenerate_limit": MAX_REGENERATIONS_PER_SECTION,
+            "pending_manual_edit": bool(history) and history[0].change_type == "manual_edit",
+        })
+    return views
+
+
+def _render_edit(
+    request: Request,
+    db: Session,
+    proposal: Proposal,
+    error: str | None = None,
+    status_code: int = 200,
+    pending_section_key: str | None = None,
+    pending_comment: str = "",
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="proposal_edit.html",
+        context={
+            "proposal": proposal,
+            "section_views": _build_section_views(db, proposal),
+            "error": error,
+            "pending_section_key": pending_section_key,
+            "pending_comment": pending_comment,
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/{proposal_id}/edit")
+def edit_proposal(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    if not db.execute(select(Section).where(Section.proposal_id == proposal.id)).scalars().first():
+        return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+    return _render_edit(request, db, proposal)
+
+
+@router.post("/{proposal_id}/sections/{section_key}/edit")
+def edit_section(
+    proposal_id: int,
+    section_key: str,
+    request: Request,
+    content: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    section = _get_section(proposal, section_key, db)
+
+    new_content = content.strip()
+    if not new_content:
+        return _render_edit(request, db, proposal, error="Section content can't be empty.", status_code=400)
+
+    old_content = section.content
+    section.content = new_content
+    # A manual edit is how a salesperson resolves a flagged gap - trust
+    # their judgment that real content now exists.
+    section.has_gap_marker = False
+    db.add(
+        SectionHistory(
+            section_id=section.id,
+            old_content=old_content,
+            new_content=new_content,
+            change_type="manual_edit",
+            triggering_comment=None,
+            changed_by=user.id,
+        )
+    )
+    db.commit()
+    logger.info("User id=%s manually edited section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
+
+
+@router.post("/{proposal_id}/sections/{section_key}/regenerate")
+def regenerate_section_route(
+    proposal_id: int,
+    section_key: str,
+    request: Request,
+    comment: str = Form(""),
+    confirm_overwrite: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    section = _get_section(proposal, section_key, db)
+    title = SECTION_TITLES.get(section_key, section_key)
+
+    history = db.execute(
+        select(SectionHistory)
+        .where(SectionHistory.section_id == section.id)
+        .order_by(SectionHistory.created_at.desc())
+    ).scalars().all()
+
+    regenerate_count = sum(1 for h in history if h.change_type == "regenerate")
+    if regenerate_count >= MAX_REGENERATIONS_PER_SECTION:
+        return _render_edit(
+            request, db, proposal,
+            error=f"'{title}' has reached its regeneration limit ({MAX_REGENERATIONS_PER_SECTION}). "
+            f"Edit it manually instead.",
+            status_code=400,
+        )
+
+    pending_manual_edit = bool(history) and history[0].change_type == "manual_edit"
+    if pending_manual_edit and confirm_overwrite != "yes":
+        return _render_edit(
+            request, db, proposal,
+            error=f"'{title}' has a manual edit that regenerating would overwrite.",
+            status_code=409,
+            pending_section_key=section_key,
+            pending_comment=comment,
+        )
+
+    try:
+        result = regenerate_section(proposal, section_key, section.content, comment.strip() or None)
+    except GenerationError:
+        return _render_edit(
+            request, db, proposal,
+            error="Regeneration failed - the AI service did not return a usable section. Please try again.",
+            status_code=502,
+        )
+
+    old_content = section.content
+    section.content = result.content
+    section.has_gap_marker = result.has_gap
+    db.add(
+        SectionHistory(
+            section_id=section.id,
+            old_content=old_content,
+            new_content=result.content,
+            change_type="regenerate",
+            triggering_comment=comment.strip() or None,
+            changed_by=user.id,
+        )
+    )
+    db.commit()
+    logger.info("User id=%s regenerated section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
+    return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)

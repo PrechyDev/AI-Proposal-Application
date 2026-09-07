@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Edit Proposal — {{ proposal.client_name }}</title>
+</head>
+<body>
+  <p><a href="/proposals/{{ proposal.id }}">&larr; Proposal</a></p>
+  <h1>Edit Proposal — {{ proposal.client_name }} ({{ proposal.company_name }})</h1>
+
+  {% if error and not pending_section_key %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+
+  {% for view in section_views %}
+  <hr>
+  <h2>{{ view.title }}
+    {% if view.section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
+  </h2>
+
+  {% if pending_section_key == view.section.section_key %}
+  <p style="color: red;">{{ error }}</p>
+  <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate">
+    <input type="hidden" name="confirm_overwrite" value="yes">
+    <input type="hidden" name="comment" value="{{ pending_comment }}">
+    <button type="submit">Yes, overwrite and regenerate</button>
+  </form>
+  <p><a href="/proposals/{{ proposal.id }}/edit">Cancel</a></p>
+  {% endif %}
+
+  <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit">
+    <textarea name="content" rows="6" cols="90">{{ view.section.content }}</textarea><br>
+    <button type="submit">Save Edit</button>
+  </form>
+
+  <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate">
+    <label>Comment to guide regeneration (optional)<br>
+      <textarea name="comment" rows="2" cols="90"></textarea>
+    </label><br>
+    <button type="submit" {% if view.regenerate_count >= view.regenerate_limit %}disabled{% endif %}>
+      Regenerate
+    </button>
+    <small>({{ view.regenerate_count }}/{{ view.regenerate_limit }} regenerations used)</small>
+  </form>
+
+  <details>
+    <summary>History ({{ view.history|length }})</summary>
+    {% for h in view.history %}
+    <div style="margin: 0.5em 0; padding-left: 0.5em; border-left: 2px solid #ccc;">
+      <strong>{{ h.change_type }}</strong> by {{ view.authors.get(h.changed_by, "user #" ~ h.changed_by) }}
+      at {{ h.created_at }}
+      {% if h.triggering_comment %}<br>Comment: {{ h.triggering_comment }}{% endif %}
+      <details><summary>Old content</summary><pre>{{ h.old_content }}</pre></details>
+      <details><summary>New content</summary><pre>{{ h.new_content }}</pre></details>
+    </div>
+    {% endfor %}
+  </details>
+  {% endfor %}
+</body>
+</html>
