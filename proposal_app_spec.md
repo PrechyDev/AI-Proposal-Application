@@ -160,6 +160,9 @@ Dashboard visibility is a query filter, not a separate permission table: salespe
 | Claude returns malformed output | Validate response shape before writing to `sections`; on mismatch, surface "generation failed, retry" rather than saving garbage |
 | Regenerate spam (cost control) | Soft cap on regenerations per section |
 | Prompt injection via client input or uploaded files | System prompt treats all intake/reference content strictly as data to summarize, never as instructions |
+| Reference file in an unsupported format uploaded (e.g. Word/Excel/PowerPoint) | Rejected at upload with a message asking the user to convert it to PDF first — not silently accepted, degraded, or force-parsed |
+| Reference file fails to download from storage at generation/regeneration time | That one file is flagged unavailable in the prompt sent to Claude; generation still proceeds for every other section/reference rather than failing the whole call |
+| Reference library file retired while already attached to a proposal | Retiring only removes it from the list offered for *new* attachments — an existing proposal's attachment (and the "References Used" display) is untouched |
 | PDF export fails | Failure surfaces on the proposal record; "approve" cannot silently succeed while the export failed behind it |
 | Email API is down | Logged to `delivery_logs` with the error; proposal shows a clear "delivery failed, retry" state, never silently marked `sent` |
 | Duplicate send (double-click / retry) | Idempotency check — only send if status isn't already `sent` |
@@ -202,6 +205,8 @@ At this volume, the entire Opus-vs-Sonnet cost gap is about $5 per 100 proposals
 
 ### 8a. Cost Optimization: Caching (yes) vs. Summarization (no)
 
+**Status: implemented in step 8** (see `PROGRESS.md`) — this section was written as a decision to build against before reference files existed; both the caching mechanism and the file-handling approach below shipped together once there was something to cache.
+
 Once reference files (§14 step 8) are attached to a proposal, every generate/regenerate call resends the system prompt, intake data, and any attached reference documents in full. Two techniques were considered to reduce that repeated cost — one adopted, one deliberately rejected, both driven by the same principle: **accuracy takes priority over cost savings**, since the cost involved is already trivial at this volume (§8 above).
 
 **Adopted — prompt caching, 5-minute (standard) TTL, not the 1-hour extended tier.**
@@ -214,6 +219,18 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 - Rejected because it's lossy by nature, and lossy directly conflicts with §10's "cited directly in text when relevant" requirement — a summary can smooth over or drop the exact figure, date, or quote a proposal needs to cite precisely from the source.
 - Given §8's cost analysis already treats the whole proposal's AI spend as a rounding error, and caching already covers the cost case that matters most (same-session regeneration) with no fidelity cost, paying a real accuracy cost to guard against an already-small and mostly-solved cost problem wasn't a good trade. If a specific case later justifies it (e.g., someone attaches a genuinely huge document), it can be handled narrowly then, not built in now as a default.
 - Reference files, once built, are always sent at full fidelity — no summarization step, no "extracted summary" column in `reference_files`.
+
+### 8b. Reference File Formats: Native Content Only, No Office Formats
+
+**Status: implemented in step 8.** This spec never named a file format for reference files (§3, §14 step 8); the actual scope was decided during the build and is recorded here so it isn't mistaken for an oversight.
+
+**Supported: `.txt`, `.md`, `.pdf`, and images (`.jpg`/`.jpeg`/`.png`/`.gif`/`.webp`).** Every one of these is sent to Claude as a native Messages API content block — a `document` block for PDF (the actual bytes, so Claude reads real pages, tables, and layout itself) and plain text, an `image` block for images — never through a local parsing/extraction library. This directly implements the "always sent at full fidelity" principle from §8a: a third-party parser (e.g. a PDF text-extraction library) is text-only and layout-blind, and would silently drop a scanned page, a chart rendered as an image, or a table it can't reconstruct in reading order, without ever erroring — exactly the kind of silent data loss full fidelity is meant to rule out.
+
+**Explicitly not supported: `.docx`, `.xlsx`, `.pptx` (or their legacy `.doc`/`.xls`/`.ppt` equivalents).** These are rejected at upload with a message asking the user to convert the file to PDF first, rather than a generic "unsupported file type" error — deliberately, not because it was out of time to build:
+- Claude does not read Office Open XML formats natively the way it reads a PDF. The mechanism behind products like Claude.ai accepting a `.docx` upload is Anthropic's **Skills** feature (an Anthropic-managed skill per format, e.g. `skill_id: "docx"`) running inside a sandboxed **code-execution container** — Claude executes real parsing code against the file, it doesn't "read the bytes" the way it does a PDF.
+- That mechanism needs three things this app doesn't have and wasn't worth adding for this scope: (1) uploading the file via Anthropic's separate Files API first, not just a request content block; (2) the `code_execution` tool plus a `container.skills` entry for the format; (3) most importantly, skills run via an autonomous tool call, which cannot happen in the same call as this app's forced `tool_choice` (the hard rule behind every generate/regenerate call, per `CLAUDE.md` — structured output is always forced tool-use, never free-form parsing). Supporting Office formats this way would mean a **separate preliminary call per file** (auto tool-choice, code execution enabled) before the existing structured-output call — a second Anthropic API surface, added latency (container start-up), and a new billing dimension (container runtime) this build's cost analysis (§8) never covered.
+- Two lighter alternatives were also considered and rejected: extracting text/images locally via pure-Python libraries (`python-docx`/`python-pptx`/`openpyxl`) — layout/positioning wouldn't be preserved, a smaller version of the same fidelity concern that ruled out `pypdf` for PDFs; and converting to PDF server-side via LibreOffice headless — pixel-perfect, but requires a system-level binary that isn't pip-installable, changing the deployment target from a stock Python buildpack to a custom Docker image (a §9/step 16 concern, not a library choice).
+- Given all three routes carry a real cost (new API surface, fidelity loss, or infra change) for a format this app can simply ask the user to convert instead, the decision was to not support Office formats at all rather than pick the least-bad option.
 
 ---
 
@@ -249,6 +266,7 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 - Client link expiry: 30 days
 - Database hosting: one shared Supabase instance reused across Koya projects (Supabase's free tier allows only two projects), with each project's tables isolated in its own Postgres schema (`proposal_app` for this app) rather than a separate project per app
 - Cost optimization for Claude calls: prompt caching (5-minute standard TTL) adopted; pre-summarizing reference files rejected as a lossy tradeoff not worth making given the accuracy requirement in §10's "cited directly in text" decision and how small the cost already is (§8a)
+- Reference file formats: limited to what Claude reads as a native content block (PDF, plain text/Markdown, images) — Office formats (`.docx`/`.xlsx`/`.pptx`) explicitly not supported after weighing Anthropic's Skills/code-execution route (real, but conflicts with this app's forced-tool_choice design and adds an uncosted latency/billing surface) against local extraction (fidelity loss) and server-side PDF conversion (a system-dependency/deployment change) — see §8b
 
 **Implicit (followed from the above, not separately discussed)**
 - Soft-delete for users (not hard-delete), so historical audit records never break
