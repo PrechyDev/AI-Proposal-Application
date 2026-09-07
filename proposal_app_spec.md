@@ -200,6 +200,21 @@ Cost assumption: one proposal = 1 initial generation call (~3,000 input / ~1,500
 
 At this volume, the entire Opus-vs-Sonnet cost gap is about $5 per 100 proposals — not large enough to be the deciding factor either way. The Sonnet 5 recommendation above is driven by quality/judgment fit, not cost avoidance; model spend here is a rounding error next to the value of one well-written proposal landing a client.
 
+### 8a. Cost Optimization: Caching (yes) vs. Summarization (no)
+
+Once reference files (§14 step 8) are attached to a proposal, every generate/regenerate call resends the system prompt, intake data, and any attached reference documents in full. Two techniques were considered to reduce that repeated cost — one adopted, one deliberately rejected, both driven by the same principle: **accuracy takes priority over cost savings**, since the cost involved is already trivial at this volume (§8 above).
+
+**Adopted — prompt caching, 5-minute (standard) TTL, not the 1-hour extended tier.**
+- Anthropic's prompt caching is content-addressed: a cache breakpoint after the static prefix (system prompt + intake + reference files) means repeat calls sharing that exact prefix pay a much lower rate to reread it, while any edit to that content is simply a cache miss — never stale or wrong content served, only a fresh full-price call. This makes caching a pure cost optimization with **zero accuracy tradeoff**, unlike summarization below.
+- The realistic usage pattern — a salesperson reviewing one proposal and regenerating a few sections back-to-back — happens in a burst of a few minutes, and the standard cache's 5-minute TTL **refreshes on every hit**, so an active session stays warm throughout without needing the longer tier.
+- The 1-hour extended cache costs roughly 2x the normal input rate to write (vs. ~1.25x for the 5-minute tier) to guard mainly against long idle gaps between edits — not the case being optimized for here, so the extra cost and complexity wasn't justified.
+
+**Considered and rejected — pre-summarizing reference files (e.g., at upload time, via a cheaper model) and sending the summary instead of the full document on every call.**
+- This would have helped a different scenario than caching does: cost amortization for a *library* file reused across many separate proposals over time (days/weeks apart), which a 5-minute cache never touches.
+- Rejected because it's lossy by nature, and lossy directly conflicts with §10's "cited directly in text when relevant" requirement — a summary can smooth over or drop the exact figure, date, or quote a proposal needs to cite precisely from the source.
+- Given §8's cost analysis already treats the whole proposal's AI spend as a rounding error, and caching already covers the cost case that matters most (same-session regeneration) with no fidelity cost, paying a real accuracy cost to guard against an already-small and mostly-solved cost problem wasn't a good trade. If a specific case later justifies it (e.g., someone attaches a genuinely huge document), it can be handled narrowly then, not built in now as a default.
+- Reference files, once built, are always sent at full fidelity — no summarization step, no "extracted summary" column in `reference_files`.
+
 ---
 
 ## 9. Deployment Decisions
@@ -233,6 +248,7 @@ At this volume, the entire Opus-vs-Sonnet cost gap is about $5 per 100 proposals
 - Feature: 7-day unopened-link nudge notification to the salesperson
 - Client link expiry: 30 days
 - Database hosting: one shared Supabase instance reused across Koya projects (Supabase's free tier allows only two projects), with each project's tables isolated in its own Postgres schema (`proposal_app` for this app) rather than a separate project per app
+- Cost optimization for Claude calls: prompt caching (5-minute standard TTL) adopted; pre-summarizing reference files rejected as a lossy tradeoff not worth making given the accuracy requirement in §10's "cited directly in text" decision and how small the cost already is (§8a)
 
 **Implicit (followed from the above, not separately discussed)**
 - Soft-delete for users (not hard-delete), so historical audit records never break
