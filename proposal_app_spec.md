@@ -275,6 +275,8 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 
 Domain authentication is still worth doing on Brevo eventually for deliverability (fewer spam-folder landings, especially at Gmail/Yahoo/Microsoft) — but unlike Resend, it's an optimization to do later, not a blocker to get real sending working today.
 
+**Backup path added post-step-16: Gmail SMTP.** `send_email()` tries Brevo first, and only falls back to a personal Gmail account (SMTP, app password) if Brevo is unconfigured or a real send attempt to it fails (e.g. the account gets suspended) — only raising an error if both fail. This is a backup, not an equal alternative: Gmail's SMTP relay can only send *as* the authenticated Gmail address itself (no domain delegation), so a fallback send shows that personal address as the sender rather than the central `EMAIL_FROM_ADDRESS`. `cc`/`reply_to` still work identically either way.
+
 ### 8d. Email Architecture: Central Inbox, CC/Reply-To, and Why Each of the Three Flows Exists
 
 **Status: implemented post-step-14.** This spec's original persona flows (§6) named *that* an approver gets emailed and a client gets emailed, but not the sending architecture behind it. The architecture below — and the third flow, changes-requested notifications, which didn't exist before this — was added once the gap became concrete: every proposal-related email now sends from one central address (`EMAIL_FROM_ADDRESS`), never a per-salesperson address, with `cc`/`reply_to` set per-call depending on who the email is about.

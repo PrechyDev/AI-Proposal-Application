@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     brevo_api_key: str | None = Field(default=None, validation_alias="BREVO_API_KEY")
     email_from_address: str | None = Field(default=None, validation_alias="EMAIL_FROM_ADDRESS")
     email_from_name: str = Field(default="Koya Talent", validation_alias="EMAIL_FROM_NAME")
+
+    # Backup send path, used only if Brevo isn't configured or a real send
+    # to it fails - see app/services/email.py.
+    gmail_address: str | None = Field(default=None, validation_alias="GMAIL_ADDRESS")
+    gmail_app_password: str | None = Field(default=None, validation_alias="GMAIL_APP_PASSWORD")
     app_base_url: str = Field(default="http://127.0.0.1:8000", validation_alias="APP_BASE_URL")
 
 
