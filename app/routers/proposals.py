@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
@@ -51,6 +51,34 @@ REQUIRED_TEXT_FIELDS = [
     ("proposed_timeline", "Proposed timeline"),
     ("estimated_pricing", "Estimated pricing"),
 ]
+
+
+@router.get("")
+def list_my_proposals(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Spec section 4/5: "/proposals ... dashboard, filtered by
+    created_by = me OR approver_id = me" - every status, not just what's
+    actionable right now (that's what /dashboard's narrower widgets are
+    for); this is the full history a salesperson or approver would want to
+    browse.
+    """
+    proposals = db.execute(
+        select(Proposal)
+        .where(or_(Proposal.created_by == user.id, Proposal.approver_id == user.id))
+        .order_by(Proposal.updated_at.desc())
+    ).scalars().all()
+
+    person_ids = {p.created_by for p in proposals} | {p.approver_id for p in proposals if p.approver_id}
+    people = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(person_ids))).scalars().all()}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="proposals_list.html",
+        context={"proposals": proposals, "people": people, "user": user},
+    )
 
 
 @router.get("/new")

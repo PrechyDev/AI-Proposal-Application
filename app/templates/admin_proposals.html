@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>All Proposals — AI Proposal Application</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>All Proposals ({{ proposals|length }})</h1>
+
+  {% if error %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+
+  <form method="get" action="/admin/proposals">
+    <label>Status
+      <select name="status">
+        <option value="">-- any --</option>
+        {% for s in statuses %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Client <input type="text" name="client" value="{{ filters.client }}" placeholder="name or company"></label>
+    <label>Salesperson
+      <select name="salesperson_id">
+        <option value="">-- any --</option>
+        {% for u in salespeople %}
+        <option value="{{ u.id }}" {% if filters.salesperson_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Approver
+      <select name="approver_id">
+        <option value="">-- any --</option>
+        {% for u in approvers %}
+        <option value="{{ u.id }}" {% if filters.approver_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>From <input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+    <label>To <input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+    <button type="submit">Filter</button>
+    <a href="/admin/proposals">Clear</a>
+  </form>
+
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>Client</th><th>Company</th><th>Status</th><th>Salesperson</th><th>Approver</th><th>Created</th><th>Updated</th><th></th>
+    </tr>
+    {% for p in proposals %}
+    <tr>
+      <td>{{ p.client_name }}</td>
+      <td>{{ p.company_name }}</td>
+      <td>{{ p.status }}</td>
+      <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
+      <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
+      <td>{{ p.created_at.strftime('%Y-%m-%d') }}</td>
+      <td>{{ p.updated_at }}</td>
+      <td>
+        {% if p.status == "pending_approval" %}
+        <form method="post" action="/admin/proposals/{{ p.id }}/reassign-approver" style="display:inline;">
+          <select name="approver_id">
+            {% for u in approvers %}
+            <option value="{{ u.id }}" {% if p.approver_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">Reassign</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

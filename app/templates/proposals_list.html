@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>My Proposals — AI Proposal Application</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>My Proposals ({{ proposals|length }})</h1>
+
+  {% if proposals %}
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>Client</th><th>Company</th><th>Status</th><th>Created By</th><th>Approver</th><th>Updated</th><th></th>
+    </tr>
+    {% for p in proposals %}
+    <tr>
+      <td>{{ p.client_name }}</td>
+      <td>{{ p.company_name }}</td>
+      <td>{{ p.status }}</td>
+      <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
+      <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
+      <td>{{ p.updated_at }}</td>
+      <td>
+        {% if p.created_by == user.id %}
+        <a href="/proposals/{{ p.id }}">Open</a>
+        {% elif p.approver_id == user.id %}
+        <a href="/proposals/{{ p.id }}/approve">Open</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p><em>Nothing here yet.</em></p>
+  {% endif %}
+</body>
+</html>

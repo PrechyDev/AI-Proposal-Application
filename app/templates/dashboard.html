@@ -16,8 +16,12 @@
   <p><a href="/proposals/new">New proposal</a></p>
   <p><a href="/library">Reference library</a></p>
   {% endif %}
+  {% if user.can_create or user.can_approve %}
+  <p><a href="/proposals">My proposals</a></p>
+  {% endif %}
   {% if user.is_admin %}
   <p><a href="/admin/users">Manage users</a></p>
+  <p><a href="/admin/proposals">All proposals</a></p>
   {% endif %}
 
   {% if user.can_approve %}
