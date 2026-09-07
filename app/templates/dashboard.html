@@ -12,6 +12,9 @@
     <li>Can approve proposals: {{ user.can_approve }}</li>
     <li>Admin: {{ user.is_admin }}</li>
   </ul>
+  {% if user.can_create %}
+  <p><a href="/proposals/new">New proposal</a></p>
+  {% endif %}
   {% if user.is_admin %}
   <p><a href="/admin/users">Manage users</a></p>
   {% endif %}

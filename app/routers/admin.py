@@ -36,9 +36,11 @@ def list_users(request: Request, db: Session = Depends(get_db)):
 @router.post("/users")
 def create_user(
     request: Request,
-    name: str = Form(...),
-    email: str = Form(...),
-    password: str = Form(...),
+    # "" not Form(...): see the note in routers/proposals.py - Starlette
+    # drops blank urlencoded fields entirely rather than keeping "".
+    name: str = Form(""),
+    email: str = Form(""),
+    password: str = Form(""),
     can_create: bool = Form(False),
     can_approve: bool = Form(False),
     is_admin: bool = Form(False),

@@ -27,8 +27,11 @@ def login_form(request: Request, user: User | None = Depends(get_current_user)):
 @router.post("/login")
 def login_submit(
     request: Request,
-    email: str = Form(...),
-    password: str = Form(...),
+    # "" not Form(...): Starlette's urlencoded-form parser drops blank
+    # fields entirely, so a required Form(...) field left empty would 422
+    # instead of showing this page's normal "invalid credentials" message.
+    email: str = Form(""),
+    password: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()

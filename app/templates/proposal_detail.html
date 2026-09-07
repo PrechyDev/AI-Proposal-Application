@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Proposal for {{ proposal.client_name }} — AI Proposal Application</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>Proposal for {{ proposal.client_name }} ({{ proposal.company_name }})</h1>
+  <p>Status: <strong>{{ proposal.status }}</strong></p>
+
+  <h2>Intake</h2>
+  <ul>
+    <li>Client Email: {{ proposal.client_email }}</li>
+    <li>Date of Call: {{ proposal.date_of_call.strftime('%Y-%m-%d') }}</li>
+    <li>Summary of Client's Needs: {{ proposal.client_needs_summary }}</li>
+    <li>Project Scope: {{ proposal.project_scope }}</li>
+    <li>Goals and Objectives: {{ proposal.goals_and_objectives }}</li>
+    <li>Recommended Services: {{ proposal.recommended_services }}</li>
+    <li>Proposed Timeline: {{ proposal.proposed_timeline }}</li>
+    <li>Estimated Pricing: {{ proposal.estimated_pricing }}</li>
+  </ul>
+
+  <h2>Generated Proposal</h2>
+  <p><em>No sections generated yet — Claude generation lands in build step 6.</em></p>
+</body>
+</html>

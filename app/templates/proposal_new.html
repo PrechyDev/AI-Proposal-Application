@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>New Proposal — AI Proposal Application</title>
+</head>
+<body>
+  <p><a href="/dashboard">&larr; Dashboard</a></p>
+  <h1>New Proposal — Intake</h1>
+  {% if error %}
+  <p style="color: red;">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/proposals/new">
+    <label>Client Name <input type="text" name="client_name" value="{{ values.client_name or '' }}" required></label><br>
+    <label>Client Email <input type="email" name="client_email" value="{{ values.client_email or '' }}" required></label><br>
+    <label>Company Name <input type="text" name="company_name" value="{{ values.company_name or '' }}" required></label><br>
+    <label>Date of Call <input type="date" name="date_of_call" value="{{ values.date_of_call or '' }}" required></label><br>
+    <label>Summary of Client's Needs<br>
+      <textarea name="client_needs_summary" rows="3" cols="60" required>{{ values.client_needs_summary or '' }}</textarea>
+    </label><br>
+    <label>Project Scope<br>
+      <textarea name="project_scope" rows="3" cols="60" required>{{ values.project_scope or '' }}</textarea>
+    </label><br>
+    <label>Goals and Objectives<br>
+      <textarea name="goals_and_objectives" rows="3" cols="60" required>{{ values.goals_and_objectives or '' }}</textarea>
+    </label><br>
+    <label>Recommended Services or Deliverables<br>
+      <textarea name="recommended_services" rows="3" cols="60" required>{{ values.recommended_services or '' }}</textarea>
+    </label><br>
+    <label>Proposed Timeline<br>
+      <textarea name="proposed_timeline" rows="2" cols="60" required>{{ values.proposed_timeline or '' }}</textarea>
+    </label><br>
+    <label>Estimated Pricing<br>
+      <textarea name="estimated_pricing" rows="2" cols="60" required>{{ values.estimated_pricing or '' }}</textarea>
+    </label><br>
+    <button type="submit">Create Proposal</button>
+  </form>
+</body>
+</html>
