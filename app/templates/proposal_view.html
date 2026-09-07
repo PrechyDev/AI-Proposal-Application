@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Proposal for {{ content.proposal.client_name }} — Koya Talent</title>
+  <style>
+    @media print {
+      .no-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Proposal for {{ content.proposal.client_name }} ({{ content.proposal.company_name }})</h1>
+
+  <p class="no-print">
+    <a href="/view/{{ token }}/pdf">Download as PDF</a>
+  </p>
+
+  {% for section in content.sections %}
+  <h2>{{ section.title }}</h2>
+  <div>{{ section.content | markdown }}</div>
+  {% endfor %}
+
+  {% if content.references %}
+  <h2>References Used</h2>
+  <ul>
+    {% for ref in content.references %}
+    <li>{{ ref.name }}{% if ref.tags %} ({{ ref.tags|join(', ') }}){% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</body>
+</html>

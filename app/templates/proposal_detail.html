@@ -72,7 +72,7 @@
     <h3>{{ section.section_key.replace('_', ' ').title() }}
       {% if section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
     </h3>
-    <div>{{ section.content }}</div>
+    <div>{{ section.content | markdown }}</div>
     {% endfor %}
 
     {% if proposal.status in ("draft", "changes_requested") %}

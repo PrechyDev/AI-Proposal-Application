@@ -1,7 +1,6 @@
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,11 +8,11 @@ from app.auth import require_can_create
 from app.db import get_db
 from app.models import ReferenceFile, User
 from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
+from app.templating import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/library")
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _render_library(request: Request, db: Session, error: str | None = None, status_code: int = 200):

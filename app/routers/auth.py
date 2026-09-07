@@ -2,7 +2,6 @@ import logging
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,11 +9,11 @@ from app.auth import SESSION_USER_KEY, get_current_user
 from app.db import get_db
 from app.models import User
 from app.security import verify_password
+from app.templating import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
 @router.get("/login")

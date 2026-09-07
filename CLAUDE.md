@@ -55,7 +55,19 @@ commit, reviewed and documented before the next one starts.
   `aws-1-eu-west-1.pooler.supabase.com` (`getaddrinfo failed`), and an immediate
   retry always succeeds. Root cause was never pinned down (see `PROGRESS.md` step
   6 for what was and wasn't investigated) — if it recurs, just retry once before
-  assuming something is actually broken.
+  assuming something is actually broken. It's also recurred *mid-run* a few times
+  (steps 9-11), not just on a process's first query — same fix (retry), just
+  don't assume it's limited to the very first request.
+- **Testing anything that calls Playwright (PDF export, step 11+) needs a real
+  running server, not `TestClient`.** `TestClient`'s in-process ASGI transport
+  never binds a real port, but Playwright's `page.goto()` makes a real HTTP
+  request to `settings.app_base_url` - it'll get `net::ERR_CONNECTION_REFUSED`
+  against a `TestClient`-only test. Start a real `uvicorn` on the port
+  `app_base_url` actually points at (check via
+  `get_settings().app_base_url` - defaults to `http://127.0.0.1:8000`) and hit
+  it with a real `httpx.Client` instead; give that client a generous timeout
+  (`timeout=30.0`), since this app's real DB round-trips routinely take
+  several seconds and httpx's 5s default will time out mid-flow.
 
 ## Shared Supabase instance — real danger, already mitigated once
 
@@ -132,13 +144,22 @@ Supabase Storage now also holds the real uploaded blobs for these under the
 `reference-files` bucket — same "no dev/prod split yet" caveat applies to storage
 now, not just the Postgres rows (see `PROGRESS.md`'s open items).
 
-Step 9/10 verification added proposals 10-13: id 12 ("Solstice Analytics") is the
-most exercised — fully approved, reopened, resubmitted, and re-approved, so it has
-two `snapshots` rows (v1 and v2) and its own `client_token` history; useful as a
-ready-made example once `/view/{token}` (step 11) exists. Id 13 is deliberately
+Step 9/10 verification added proposals 10-13: id 12 ("Solstice Analytics") was
+fully approved, reopened, resubmitted, and re-approved (two `snapshots` rows,
+v1 and v2), then reopened *again* during step 11 testing to prove the old
+client link dies — it's back in `draft` with `client_token=NULL` as of step 11,
+not currently a live example of an approved proposal. Id 13 is deliberately
 left in `draft` with an approver force-assigned directly in the DB (bypassing
 `/submit`), used only to test that approving a never-submitted proposal is
 rejected — don't be surprised it has an `approver_id` but is still `draft`.
 Proposal id 14 ("Real Email Test Co") exists solely to verify the real Resend
 send (submitted to the id-7 user above) — filler intake content throughout,
 not a realistic example to reuse.
+
+Step 11 verification added proposal id 16 ("Meridian Freight") — fully approved
+with a real generated PDF pulled and inspected. It too was reopened at the end
+of testing (to prove the old `/view/{token}` link dies), so like id 12 it's
+currently `draft` with `client_token=NULL`, not a live "approved" example
+despite having a `snapshots` row. If you need a proposal that's *currently*
+`approved` with a working client link for manual poking around, none of the
+existing test data qualifies right now — create a fresh one and approve it.

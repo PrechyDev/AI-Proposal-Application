@@ -49,7 +49,7 @@
   <h3>{{ view.title }}
     {% if view.section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
   </h3>
-  <div>{{ view.section.content }}</div>
+  <div>{{ view.section.content | markdown }}</div>
 
   {% if view.comments %}
   <p><strong>Comments:</strong></p>

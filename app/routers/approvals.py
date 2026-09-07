@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +11,7 @@ from app.auth import require_can_approve
 from app.db import get_db
 from app.models import ApprovalComment, Proposal, ProposalReference, ReferenceFile, Section, Snapshot, User
 from app.services.proposal_generation import SECTION_TITLES
+from app.templating import templates
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 CLIENT_TOKEN_EXPIRY_DAYS = 30
 
 router = APIRouter(prefix="/proposals")
-templates = Jinja2Templates(directory="app/templates")
 
 
 def _get_proposal_for_approver(proposal_id: int, db: Session, user: User) -> Proposal:

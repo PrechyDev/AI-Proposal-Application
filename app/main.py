@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -16,9 +15,11 @@ from app.models import Proposal, User
 from app.routers.admin import router as admin_router
 from app.routers.approvals import router as approvals_router
 from app.routers.auth import router as auth_router
+from app.routers.client_view import router as client_view_router
 from app.routers.library import router as library_router
 from app.routers.proposals import router as proposals_router
 from app.storage import ensure_bucket_exists
+from app.templating import templates
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -46,8 +47,7 @@ app.include_router(admin_router)
 app.include_router(proposals_router)
 app.include_router(approvals_router)
 app.include_router(library_router)
-
-templates = Jinja2Templates(directory="app/templates")
+app.include_router(client_view_router)
 
 
 @app.exception_handler(HTTPException)
@@ -71,9 +71,7 @@ def health(db: Session = Depends(get_db)) -> dict:
 
 @app.get("/")
 def index(request: Request):
-    return templates.TemplateResponse(
-        request=request, name="index.html", context={"title": "AI Proposal Application"}
-    )
+    return templates.TemplateResponse(request=request, name="index.html", context={})
 
 
 @app.get("/dashboard")

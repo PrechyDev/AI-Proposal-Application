@@ -4,7 +4,6 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -31,11 +30,11 @@ from app.services.proposal_generation import (
     regenerate_section,
 )
 from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
+from app.templating import templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/proposals")
-templates = Jinja2Templates(directory="app/templates")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
