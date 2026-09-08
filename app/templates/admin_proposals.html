@@ -18,50 +18,53 @@
     <p class="error-message">{{ error }}</p>
     {% endif %}
 
-    <form method="get" action="/admin/proposals" class="section-card" style="margin-bottom: 24px;">
-      <div style="display: flex; flex-wrap: wrap; gap: 16px;">
-        <div class="field" style="flex: 1; min-width: 160px;">
+    <form method="get" action="/admin/proposals" class="section-card filter-card">
+      <div class="section-card-header">
+        <h3>Filters</h3>
+      </div>
+      <div class="filter-grid">
+        <div class="field">
           <label for="filter_status">Status</label>
           <select name="status" id="filter_status">
-            <option value="">-- any --</option>
+            <option value="">Any status</option>
             {% for s in statuses %}
             <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s.replace('_', ' ')|title }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field" style="flex: 1; min-width: 160px;">
+        <div class="field">
           <label for="filter_client">Client / Company</label>
-          <input type="text" name="client" id="filter_client" value="{{ filters.client }}" placeholder="name or company">
+          <input type="text" name="client" id="filter_client" value="{{ filters.client }}" placeholder="Search by name">
         </div>
-        <div class="field" style="flex: 1; min-width: 160px;">
+        <div class="field">
           <label for="filter_salesperson">Salesperson</label>
           <select name="salesperson_id" id="filter_salesperson">
-            <option value="">-- any --</option>
+            <option value="">Any salesperson</option>
             {% for u in salespeople %}
             <option value="{{ u.id }}" {% if filters.salesperson_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field" style="flex: 1; min-width: 160px;">
+        <div class="field">
           <label for="filter_approver">Approver</label>
           <select name="approver_id" id="filter_approver">
-            <option value="">-- any --</option>
+            <option value="">Any approver</option>
             {% for u in approvers %}
             <option value="{{ u.id }}" {% if filters.approver_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field" style="min-width: 140px;">
-          <label for="filter_from">From</label>
-          <input type="date" name="date_from" id="filter_from" value="{{ filters.date_from }}">
-        </div>
-        <div class="field" style="min-width: 140px;">
-          <label for="filter_to">To</label>
-          <input type="date" name="date_to" id="filter_to" value="{{ filters.date_to }}">
+        <div class="field">
+          <label for="filter_from">Date Range</label>
+          <div class="date-range-inputs">
+            <input type="date" name="date_from" id="filter_from" value="{{ filters.date_from }}" aria-label="From date">
+            <span class="gate-note">to</span>
+            <input type="date" name="date_to" id="filter_to" value="{{ filters.date_to }}" aria-label="To date">
+          </div>
         </div>
       </div>
-      <div class="quick-actions" style="margin-top: 4px; margin-bottom: 0;">
-        <button type="submit" class="btn btn-sm">Filter</button>
+      <div class="quick-actions filter-actions">
+        <button type="submit" class="btn btn-sm">Apply Filters</button>
         <a href="/admin/proposals" class="btn btn-sm btn-secondary">Clear</a>
       </div>
     </form>
@@ -89,18 +92,25 @@
             <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
             <td class="cell-meta">{{ p.created_at.strftime('%Y-%m-%d') }}</td>
             <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
-            <td style="min-width: 100px;">
-              <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+            <td>
+              <div class="quick-actions" style="margin: 0; gap: 8px; flex-wrap: nowrap;">
                 <a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a>
                 {% if p.status == "pending_approval" %}
-                <form method="post" action="/admin/proposals/{{ p.id }}/reassign-approver" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
-                  <select name="approver_id" style="font-size: 13px; width: 100%;">
-                    {% for u in approvers %}
-                    <option value="{{ u.id }}" {% if p.approver_id == u.id %}selected{% endif %}>{{ u.name }}</option>
-                    {% endfor %}
-                  </select>
-                  <button type="submit" class="btn btn-sm btn-secondary" style="width: 100%;">Reassign</button>
-                </form>
+                <details class="action-menu">
+                  <summary class="btn btn-sm btn-secondary" aria-label="Reassign approver">Reassign</summary>
+                  <div class="file-menu-popover reassign-popover">
+                    <form method="post" action="/admin/proposals/{{ p.id }}/reassign-approver">
+                      <div class="field" style="margin-bottom: 8px;">
+                        <select name="approver_id">
+                          {% for u in approvers %}
+                          <option value="{{ u.id }}" {% if p.approver_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                      <button type="submit" class="btn btn-sm" style="width: 100%;">Reassign</button>
+                    </form>
+                  </div>
+                </details>
                 {% endif %}
               </div>
             </td>

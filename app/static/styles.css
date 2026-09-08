@@ -963,3 +963,101 @@ html.is-navigating #nav-progress-bar {
   margin: 0 0 20px;
   font-size: 14px;
 }
+
+/* A finalized (approved/sent) proposal reads as one continuous document -
+   no per-section cards, no History - matching how the client-facing
+   /view/{token} page already renders it, since nothing is editable or
+   commentable at this point anyway. */
+.doc-section {
+  padding: 24px 0;
+}
+
+.doc-section-divided {
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+}
+
+.doc-section-title {
+  font-family: var(--font-heading);
+  color: var(--color-primary);
+  font-size: 19px;
+  margin: 0 0 14px;
+}
+
+/* --- Admin: User Management --- */
+
+.invite-card {
+  border-top: 3px solid var(--color-accent);
+  margin-bottom: 36px;
+}
+
+.invite-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.invite-form-row .field {
+  flex: 1;
+  min-width: 220px;
+}
+
+.permissions-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+/* --- Admin: All Proposals filter + per-row action popover --- */
+
+.filter-card {
+  margin-bottom: 24px;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px 20px;
+}
+
+.date-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.date-range-inputs input {
+  flex: 1;
+}
+
+.filter-actions {
+  margin-top: 20px;
+  margin-bottom: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* A summary styled as a plain .btn (not the small icon-circle look
+   .file-menu summary defines) that still reveals a positioned popover -
+   used for the per-row Reassign action, distinct from .file-menu since
+   that class's own summary rule would override .btn's own sizing. */
+.action-menu {
+  display: inline-block;
+  position: relative;
+}
+
+.action-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.action-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.reassign-popover {
+  min-width: 200px;
+}

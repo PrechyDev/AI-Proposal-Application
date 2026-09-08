@@ -17,13 +17,47 @@
     <p class="error-message">{{ error }}</p>
     {% endif %}
 
+    <div class="section-card invite-card">
+      <div class="section-card-header">
+        <h3>Invite a New User</h3>
+      </div>
+      <p class="gate-note" style="margin-top: -4px;">They'll get an email to set their own password and name - no password is created here.</p>
+      <form method="post" action="/admin/users">
+        <div class="invite-form-row">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" placeholder="Full name" required>
+          </div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" placeholder="name@company.com" required>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom: 20px;">
+          <label>Permissions</label>
+          <div class="checkbox-group">
+            <label><input type="checkbox" name="can_create" checked> Can create proposals</label>
+            <label><input type="checkbox" name="can_approve"> Can approve proposals</label>
+            <label><input type="checkbox" name="is_admin"> Admin</label>
+          </div>
+        </div>
+        <button type="submit" class="btn" data-loading-text="Sending invite…">
+          <span class="spinner" hidden></span>
+          <span data-btn-text>Send Invite</span>
+        </button>
+      </form>
+    </div>
+
     <div class="section">
+      <div class="section-header">
+        <h2>All Users</h2>
+        <span class="count-pill {% if users %}has-items{% endif %}">{{ users|length }}</span>
+      </div>
       <div style="overflow-x: auto;">
         <table class="data-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Email</th>
+              <th>User</th>
               <th>Status</th>
               <th>Permissions</th>
               <th></th>
@@ -32,8 +66,10 @@
           <tbody>
             {% for u in users %}
             <tr>
-              <td>{{ u.name }}</td>
-              <td>{{ u.email }}</td>
+              <td>
+                {{ u.name }}
+                <div class="cell-meta">{{ u.email }}</div>
+              </td>
               <td>
                 {% if not u.is_active %}
                 <span class="status-pill status-changes_requested">Deactivated</span>
@@ -44,56 +80,30 @@
                 {% endif %}
               </td>
               <td>
-                <form method="post" action="/admin/users/{{ u.id }}/permissions" class="inline-form">
-                  <div class="checkbox-group">
-                    <label><input type="checkbox" name="can_create" {% if u.can_create %}checked{% endif %}> Create</label>
-                    <label><input type="checkbox" name="can_approve" {% if u.can_approve %}checked{% endif %}> Approve</label>
-                    <label><input type="checkbox" name="is_admin" {% if u.is_admin %}checked{% endif %}> Admin</label>
-                    <button type="submit" class="btn btn-sm btn-secondary">Save</button>
-                  </div>
+                <form method="post" action="/admin/users/{{ u.id }}/permissions" class="permissions-form">
+                  <label><input type="checkbox" name="can_create" {% if u.can_create %}checked{% endif %}> Create</label>
+                  <label><input type="checkbox" name="can_approve" {% if u.can_approve %}checked{% endif %}> Approve</label>
+                  <label><input type="checkbox" name="is_admin" {% if u.is_admin %}checked{% endif %}> Admin</label>
+                  <button type="submit" class="btn btn-sm btn-secondary">Save</button>
                 </form>
               </td>
               <td>
-                <form method="post" action="/admin/users/{{ u.id }}/toggle-active" class="inline-form">
-                  <button type="submit" class="btn btn-sm btn-secondary">{{ "Deactivate" if u.is_active else "Activate" }}</button>
-                </form>
-                {% if u.password_hash is none %}
-                <form method="post" action="/admin/users/{{ u.id }}/resend-invite" class="inline-form">
-                  <button type="submit" class="btn btn-sm">Resend Invite</button>
-                </form>
-                {% endif %}
+                <div class="quick-actions" style="margin: 0; gap: 8px;">
+                  <form method="post" action="/admin/users/{{ u.id }}/toggle-active" class="inline-form">
+                    <button type="submit" class="btn btn-sm btn-secondary">{{ "Deactivate" if u.is_active else "Activate" }}</button>
+                  </form>
+                  {% if u.password_hash is none %}
+                  <form method="post" action="/admin/users/{{ u.id }}/resend-invite" class="inline-form">
+                    <button type="submit" class="btn btn-sm">Resend Invite</button>
+                  </form>
+                  {% endif %}
+                </div>
               </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-    </div>
-
-    <div class="section">
-      <div class="section-header">
-        <h2>Invite a New User</h2>
-      </div>
-      <p class="list-item-meta" style="margin-top: -6px;">They'll get an email to set their own password - no password is created here.</p>
-      <form method="post" action="/admin/users" class="card" style="max-width: 480px; padding: 20px 24px;">
-        <div class="field">
-          <label for="name">Name</label>
-          <input type="text" id="name" name="name" required>
-        </div>
-        <div class="field">
-          <label for="email">Email</label>
-          <input type="email" id="email" name="email" required>
-        </div>
-        <div class="checkbox-group" style="margin-bottom: 16px;">
-          <label><input type="checkbox" name="can_create" checked> Can create proposals</label>
-          <label><input type="checkbox" name="can_approve"> Can approve proposals</label>
-          <label><input type="checkbox" name="is_admin"> Admin</label>
-        </div>
-        <button type="submit" class="btn" data-loading-text="Sending invite…">
-          <span class="spinner" hidden></span>
-          <span data-btn-text>Send Invite</span>
-        </button>
-      </form>
     </div>
   </div>
   <script src="/static/app.js"></script>

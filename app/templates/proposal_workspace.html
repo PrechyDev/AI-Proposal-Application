@@ -207,11 +207,22 @@
     {% endif %}
 
     {% if section_views %}
+      {% if is_finalized %}
+      <div class="section-card">
+        {% for view in section_views %}
+        <div class="doc-section {% if not loop.first %}doc-section-divided{% endif %}">
+          <h3 class="doc-section-title">{{ view.title }}</h3>
+          <div class="section-content-view">{{ view.section.content | strip_dup_heading(view.title) | markdown }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
       {% for view in section_views %}
       {% set section_error = error if pending_section_key == view.section.section_key else None %}
       {% set pending_overwrite = pending_is_overwrite and pending_section_key == view.section.section_key %}
       {% include "_section_fragment.html" %}
       {% endfor %}
+      {% endif %}
 
       {% if can_edit and proposal.status in ("draft", "changes_requested") %}
       <div class="section-card">
