@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ proposal.client_name }} — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {% include "_navbar.html" %}
+
+  <div class="page">
+    <div class="page-header">
+      <h1>{{ proposal.client_name }} ({{ proposal.company_name }})</h1>
+    </div>
+
+    <div
+      class="section-card"
+      style="text-align: center; padding: 48px 24px;"
+      hx-get="/proposals/{{ proposal.id }}"
+      hx-trigger="load delay:3s"
+      hx-select="body > .page"
+      hx-target="body > .page"
+      hx-swap="outerHTML"
+    >
+      <span class="spinner-lg" style="display: inline-block; margin-bottom: 16px;"></span>
+      <h2 style="font-family: var(--font-heading); color: var(--color-primary); margin: 0 0 8px;">
+        This proposal is being updated
+      </h2>
+      <p class="gate-note" style="margin: 0;">
+        A full regenerate is in progress - please wait. This page will refresh automatically once it's done.
+      </p>
+    </div>
+  </div>
+</body>
+</html>

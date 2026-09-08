@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ proposal.client_name }} — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {% include "_navbar.html" %}
+
+  <div class="page">
+    <div class="page-header">
+      <h1>{{ proposal.client_name }} ({{ proposal.company_name }})</h1>
+      <span class="status-pill status-{{ proposal.status }}">{{ proposal.status.replace('_', ' ')|title }}</span>
+      {% if client_view_url %}
+      <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('{{ client_view_url }}'); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy Client Link', 1500);">
+        Copy Client Link
+      </button>
+      {% endif %}
+    </div>
+
+    {% if error %}
+    <p class="error-message">{{ error }}</p>
+    {% endif %}
+
+    {% if can_edit %}
+    <details class="section-edit-toggle" style="margin-bottom: 24px;">
+      <summary>Raw Inputs</summary>
+      <div class="section-card" style="margin-top: 8px;">
+        <p class="gate-note">
+          Edit the original intake fields and manage reference files here, then regenerate the whole
+          proposal from scratch if needed. This does not affect the sections below until you regenerate.
+        </p>
+
+        {% if pending_full_regenerate_confirm %}
+        <form method="post" action="/proposals/{{ proposal.id }}/regenerate-full" style="margin-bottom: 14px;">
+          <input type="hidden" name="confirm_overwrite" value="yes">
+          {% for f, v in pending_intake_values.items() %}
+          <input type="hidden" name="{{ f }}" value="{{ v }}">
+          {% endfor %}
+          <button type="submit" class="btn btn-sm">Yes, overwrite manual edits and regenerate everything</button>
+        </form>
+        {% endif %}
+
+        {% set iv = pending_intake_values or proposal %}
+        <form method="post" action="/proposals/{{ proposal.id }}/regenerate-full"
+              onsubmit="return confirm('Regenerate the entire proposal from these inputs? This rewrites every section and the proposal will be inaccessible to you and your approver until it finishes.');">
+          <div class="field">
+            <label for="ri_client_name">Client Name</label>
+            <input type="text" id="ri_client_name" name="client_name" value="{{ iv.client_name }}" required>
+          </div>
+          <div class="field">
+            <label for="ri_client_email">Client Email</label>
+            <input type="email" id="ri_client_email" name="client_email" value="{{ iv.client_email }}" required>
+          </div>
+          <div class="field">
+            <label for="ri_company_name">Company Name</label>
+            <input type="text" id="ri_company_name" name="company_name" value="{{ iv.company_name }}" required>
+          </div>
+          <div class="field">
+            <label for="ri_date_of_call">Date of Call</label>
+            <input type="date" id="ri_date_of_call" name="date_of_call" value="{{ pending_intake_values.date_of_call if pending_intake_values else proposal.date_of_call.strftime('%Y-%m-%d') }}" required>
+          </div>
+          <div class="field">
+            <label for="ri_client_needs_summary">Summary of Client's Needs</label>
+            <textarea id="ri_client_needs_summary" name="client_needs_summary" rows="3" required>{{ iv.client_needs_summary }}</textarea>
+          </div>
+          <div class="field">
+            <label for="ri_project_scope">Project Scope</label>
+            <textarea id="ri_project_scope" name="project_scope" rows="3" required>{{ iv.project_scope }}</textarea>
+          </div>
+          <div class="field">
+            <label for="ri_goals_and_objectives">Goals and Objectives</label>
+            <textarea id="ri_goals_and_objectives" name="goals_and_objectives" rows="3" required>{{ iv.goals_and_objectives }}</textarea>
+          </div>
+          <div class="field">
+            <label for="ri_recommended_services">Recommended Services</label>
+            <textarea id="ri_recommended_services" name="recommended_services" rows="3" required>{{ iv.recommended_services }}</textarea>
+          </div>
+          <div class="field">
+            <label for="ri_proposed_timeline">Proposed Timeline</label>
+            <textarea id="ri_proposed_timeline" name="proposed_timeline" rows="2" required>{{ iv.proposed_timeline }}</textarea>
+          </div>
+          <div class="field">
+            <label for="ri_estimated_pricing">Estimated Pricing</label>
+            <textarea id="ri_estimated_pricing" name="estimated_pricing" rows="2" required>{{ iv.estimated_pricing }}</textarea>
+          </div>
+
+          <button type="submit" class="btn" data-loading-text="Regenerating…">
+            <span class="spinner" hidden></span>
+            <span data-btn-text>Regenerate Full Proposal</span>
+          </button>
+        </form>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-border);">
+          {% if attached_references %}
+          <div class="list">
+            {% for ref in attached_references %}
+            <div class="list-item">
+              <div class="list-item-main">{{ ref.name }}{% if ref.tags %}<div class="list-item-meta">{{ ref.tags|join(', ') }}</div>{% endif %}</div>
+              <form method="post" action="/proposals/{{ proposal.id }}/references/{{ ref.id }}/remove" class="inline-form">
+                <button type="submit" class="btn btn-sm btn-secondary">Remove</button>
+              </form>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          {% if attachable_library_files %}
+          <form method="post" action="/proposals/{{ proposal.id }}/references/attach" style="margin-top: 14px;">
+            <p class="gate-note"><strong>Attach from library:</strong></p>
+            <div class="checkbox-group" style="margin-bottom: 10px;">
+              {% for f in attachable_library_files %}
+              <label><input type="checkbox" name="reference_file_ids" value="{{ f.id }}"> {{ f.name }}{% if f.tags %} ({{ f.tags|join(', ') }}){% endif %}</label>
+              {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-sm btn-secondary">Attach Selected</button>
+          </form>
+          {% endif %}
+
+          <form method="post" action="/proposals/{{ proposal.id }}/references/upload" enctype="multipart/form-data" style="margin-top: 14px;">
+            <p class="gate-note"><strong>Upload a new reference file:</strong></p>
+            <div class="field">
+              <input type="file" name="file" required>
+            </div>
+            <div class="field">
+              <input type="text" name="tags" placeholder="Tags (comma-separated, optional)">
+            </div>
+            <label style="font-size: 13px;"><input type="checkbox" name="add_to_library" value="yes"> Also add to the reusable library</label><br><br>
+            <button type="submit" class="btn btn-sm btn-secondary">Upload and Attach</button>
+          </form>
+        </div>
+      </div>
+    </details>
+    {% endif %}
+
+    {% if whole_doc_comments %}
+    <div class="section-card">
+      <div class="section-card-header">
+        <h3>General Comments</h3>
+        {% if can_review %}
+        <details class="comment-toggle">
+          <summary aria-label="Add a whole-document comment">&#128172; New</summary>
+          <div class="comment-popover">
+            <form method="post" action="/proposals/{{ proposal.id }}/comments">
+              <textarea name="comment_text" rows="2" placeholder="Add a general comment..." required></textarea>
+              <button type="submit" class="btn btn-sm">Comment</button>
+            </form>
+          </div>
+        </details>
+        {% endif %}
+      </div>
+      <div class="comment-thread">
+        {% for c in whole_doc_comments %}
+        <div class="comment-item {% if c.resolved %}is-resolved{% endif %}">
+          <div>
+            <div class="comment-item-text">{{ c.comment_text }}</div>
+            <div class="comment-item-meta">{% if c.resolved %}resolved{% endif %}</div>
+          </div>
+          {% if can_edit and not c.resolved %}
+          <form method="post" action="/proposals/{{ proposal.id }}/comments/{{ c.id }}/resolve" class="inline-form">
+            <button type="submit" class="btn btn-sm btn-secondary">Resolve</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% elif can_review and proposal.status == "pending_approval" %}
+    <div class="section-card">
+      <div class="section-card-header">
+        <h3>General Comments</h3>
+        <details class="comment-toggle">
+          <summary aria-label="Add a whole-document comment">&#128172; New</summary>
+          <div class="comment-popover">
+            <form method="post" action="/proposals/{{ proposal.id }}/comments">
+              <textarea name="comment_text" rows="2" placeholder="Add a general comment..." required></textarea>
+              <button type="submit" class="btn btn-sm">Comment</button>
+            </form>
+          </div>
+        </details>
+      </div>
+      <p class="gate-note">No general comments yet - use this for feedback that isn't about one section.</p>
+    </div>
+    {% endif %}
+
+    {% if section_views %}
+      {% for view in section_views %}
+      {% set section_error = error if pending_section_key == view.section.section_key else None %}
+      {% set pending_overwrite = pending_is_overwrite and pending_section_key == view.section.section_key %}
+      {% include "_section_fragment.html" %}
+      {% endfor %}
+
+      {% if can_edit and proposal.status in ("draft", "changes_requested") %}
+      <div class="section-card">
+        <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Submit for Approval</h3>
+        <form method="post" action="/proposals/{{ proposal.id }}/submit">
+          <div class="field">
+            <label for="approver_id">Approver</label>
+            <select name="approver_id" id="approver_id" required>
+              <option value="">-- choose an approver --</option>
+              {% for a in approvers %}
+              <option value="{{ a.id }}" {% if proposal.approver_id == a.id %}selected{% endif %}>{{ a.name }} ({{ a.email }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn" data-loading-text="Submitting…">
+            <span class="spinner" hidden></span>
+            <span data-btn-text>{% if proposal.status == "changes_requested" %}Resubmit{% else %}Submit{% endif %} for Approval</span>
+          </button>
+        </form>
+      </div>
+      {% elif proposal.status == "pending_approval" %}
+      <p class="gate-note">Awaiting approval.</p>
+      {% endif %}
+
+      {% if can_edit and proposal.status == "approved" %}
+      <div class="quick-actions">
+        <form method="post" action="/proposals/{{ proposal.id }}/send">
+          <button type="submit" class="btn" data-loading-text="Sending…">
+            <span class="spinner" hidden></span>
+            <span data-btn-text>{% if has_send_attempt %}Retry Send to Client{% else %}Send to Client{% endif %}</span>
+          </button>
+        </form>
+        <form method="post" action="/proposals/{{ proposal.id }}/reopen" onsubmit="return confirm('Reopen for editing? This will invalidate the client link that was already sent, and a new one will be sent once re-approved.');">
+          <button type="submit" class="btn btn-secondary">Reopen for Editing</button>
+        </form>
+      </div>
+      {% elif can_edit and proposal.status == "sent" %}
+      <div class="quick-actions">
+        <form method="post" action="/proposals/{{ proposal.id }}/reopen" onsubmit="return confirm('Reopen for editing? This will invalidate the client link that was already sent, and a new one will be sent once re-approved.');">
+          <button type="submit" class="btn btn-secondary">Reopen for Editing</button>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if can_review and proposal.status == "pending_approval" %}
+      <div class="section-card">
+        <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Review Decision</h3>
+        {% if has_unresolved_gap %}
+        <p class="gate-note">Every section must have its gap marker resolved before this proposal can be approved.</p>
+        {% endif %}
+        <div class="quick-actions">
+          <form method="post" action="/proposals/{{ proposal.id }}/approve">
+            <button type="submit" class="btn" {% if has_unresolved_gap or has_unresolved_comments %}disabled title="Resolve unresolved comments and gaps first"{% endif %}>
+              Approve
+            </button>
+          </form>
+          <form method="post" action="/proposals/{{ proposal.id }}/request-changes">
+            <button type="submit" class="btn btn-secondary" {% if not has_unresolved_comments %}disabled title="Add at least one comment first"{% endif %}>
+              Request Changes
+            </button>
+          </form>
+        </div>
+        {% if has_unresolved_comments %}
+        <p class="gate-note">This proposal has unresolved comments - resolve them or request changes.</p>
+        {% else %}
+        <p class="gate-note">No unresolved comments - add one to request changes, or approve as-is.</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% if delivery_logs %}
+      <details class="section-edit-toggle">
+        <summary>Delivery History ({{ delivery_logs|length }})</summary>
+        <div class="list" style="margin-top: 8px;">
+          {% for log in delivery_logs %}
+          <div class="list-item">
+            <div class="list-item-main">
+              {{ log.channel }}
+              <div class="list-item-meta">{{ log.attempted_at }}{% if log.error_message %} &mdash; {{ log.error_message }}{% endif %}</div>
+            </div>
+            <span class="status-pill {% if log.status == 'success' %}status-approved{% else %}status-changes_requested{% endif %}">{{ log.status }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    {% elif can_edit %}
+      <div class="empty-state">
+        No sections generated yet.
+        <form method="post" action="/proposals/{{ proposal.id }}/generate" style="margin-top: 10px;">
+          <button type="submit" class="btn" data-loading-text="Generating…">
+            <span class="spinner" hidden></span>
+            <span data-btn-text>Generate Proposal</span>
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <div class="empty-state">This proposal hasn't been generated yet.</div>
+    {% endif %}
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

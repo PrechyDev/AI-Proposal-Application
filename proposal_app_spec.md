@@ -36,7 +36,9 @@ A FastAPI + Postgres web app where salespeople turn discovery-call notes into a 
 
 **Status: gap found and closed post-step-16.** Despite §2 naming HTMX as core architecture from the start, an audit after step 16 (prompted directly by the user asking "was HTMX used?") found it had never actually been built anywhere across all 16 steps - every interactive action was a plain `<form>` POST followed by a full-page redirect. This was never flagged as a deliberate deviation in `PROGRESS.md`; it was simply never done.
 
-**Decision on closing it: targeted, not a full retrofit.** Asked the user directly which they wanted; given no strong preference, applied the recommendation - retrofit exactly the one interaction this section's own rationale names ("edit a section, see it update, without disturbing the rest of the page"), not every form in the app. `proposal_edit.html` loads htmx.js from cdnjs; the manual-edit and regenerate forms for each section now carry both a plain `action`/`method` (unchanged fallback if JS is disabled or fails to load) and `hx-post`/`hx-target`/`hx-swap` attributes targeting just that section's own fragment. The two route handlers (`edit_section`, `regenerate_section_route`) check an `HX-Request` header and return either the one section's re-rendered fragment (HTMX) or the original full-page redirect (plain form) - covering manual edit, regeneration, the regeneration-limit error, and the manual-edit-overwrite confirmation, all scoped to just that section. Simpler actions elsewhere in the app (admin filters, reference attach/remove, mark-comment-resolved) deliberately stay plain full-page forms - revisit only if a real need for more partial-swap interactions comes up.
+**Decision on closing it: targeted, not a full retrofit.** Asked the user directly which they wanted; given no strong preference, applied the recommendation - retrofit exactly the one interaction this section's own rationale names ("edit a section, see it update, without disturbing the rest of the page"), not every form in the app. The manual-edit and regenerate forms for each section carry both a plain `action`/`method` (unchanged fallback if JS is disabled or fails to load) and `hx-post`/`hx-target`/`hx-swap` attributes targeting just that section's own fragment. The route handlers check an `HX-Request` header and return either the one section's re-rendered fragment (HTMX) or the original full-page redirect (plain form) - covering manual edit, regeneration, the regeneration-limit error, and the manual-edit-overwrite confirmation, all scoped to just that section. Simpler actions elsewhere in the app (admin filters, reference attach/remove) deliberately stay plain full-page forms - revisit only if a real need for more partial-swap interactions comes up.
+
+**Correction (§6b): the htmx.org script itself was never actually loaded on any page until the §6b redesign.** This section originally (incorrectly) stated that the relevant page loaded htmx.js from a CDN - that never happened; no script tag referencing htmx existed anywhere in the app through the end of step 16 and into the initial stages of the §6b redesign. Every "async" section edit had, in every real browser, been silently falling back to the plain full-page-reload path this whole time (safely, since that fallback exists precisely for a missing/disabled htmx - but not the intended behavior). Caught only once §6b was verified with a real Playwright browser session instead of just `TestClient` (which sets the `HX-Request` header directly and so never exercises whether a browser would actually send it). Fixed by self-hosting a pinned `htmx.org` build rather than a CDN reference, now loaded on the unified workspace page (§6b) that carries every `hx-*` interaction in the app.
 
 ### 2b. Visual Design System (chosen for the email templates; not yet applied to the rest of the app)
 
@@ -51,7 +53,7 @@ A FastAPI + Postgres web app where salespeople turn discovery-call notes into a 
 
 Implemented in `app/templates/emails/_base.html` (shared layout - single-column, 560px, table-based markup with every style inline, per email-client HTML conventions) and the three templates that extend it.
 
-**Now also rolling out to the app's own pages, one at a time - `login.html` first, then `dashboard.html`.** A shared stylesheet (`app/static/styles.css`, served via a new `/static` mount in `main.py`) carries the same tokens (colors, fonts) as CSS custom properties plus reusable component classes (`.card`, `.field`, `.btn`, `.navbar`, `.stat-card`, `.status-pill`, etc.), so later pages can reuse it directly rather than redefining the palette. One new token was added along the way: `--color-success` (`#3F7D5C`, a muted sage green) - needed once the dashboard's proposal-status pills required a genuinely distinct "good/ready" meaning that none of navy/gold/muted/danger could represent without overloading an existing color. A shared `app/static/app.js` also now provides sitewide navigation feedback (a top progress bar on any link click or form submit - real page loads in this app routinely take a couple of real seconds, and clicks looked like they'd done nothing without it), included via the shared `_navbar.html` partial. Every other page (`proposal_detail.html`, `proposal_edit.html`'s general chrome, etc.) remains unstyled bare HTML until its own turn comes.
+**Now also rolling out to the app's own pages, one at a time - `login.html` first, then `dashboard.html`.** A shared stylesheet (`app/static/styles.css`, served via a new `/static` mount in `main.py`) carries the same tokens (colors, fonts) as CSS custom properties plus reusable component classes (`.card`, `.field`, `.btn`, `.navbar`, `.stat-card`, `.status-pill`, etc.), so later pages can reuse it directly rather than redefining the palette. One new token was added along the way: `--color-success` (`#3F7D5C`, a muted sage green) - needed once the dashboard's proposal-status pills required a genuinely distinct "good/ready" meaning that none of navy/gold/muted/danger could represent without overloading an existing color. A shared `app/static/app.js` also now provides sitewide navigation feedback (a top progress bar on any link click or form submit - real page loads in this app routinely take a couple of real seconds, and clicks looked like they'd done nothing without it), included via the shared `_navbar.html` partial. **Since §6b, the rollout also covers every proposal-related page:** the unified workspace page, the role-scoped `/proposals` list (including the new `.tab-bar` component), and `admin_proposals.html` (previously bare unstyled HTML, restyled as part of that redesign since it needed the navbar anyway). **`/view/{token}` (the client-facing proposal document itself, and the literal source Playwright prints to PDF) was redesigned separately, post-§6b, on direct feedback that it "looks ugly"** - it stayed bare `<h1>`/`<h2>`/`<p>` HTML the longest of any page, since the internal-tool rollout above never touched a client-facing route. Rebuilt with the same brand tokens as the transactional emails (`app/templates/emails/_base.html`'s navy/gold/serif palette), as fully self-contained inline CSS rather than a link to `/static/styles.css` - matching the email templates' own precedent, since it must render identically wherever Playwright's headless Chromium fetches it. Same fix round also caught and fixed a real generation bug: Claude occasionally opened a section with a heading repeating that section's own title (already rendered separately by the template) - fixed both at the source (an explicit system-prompt instruction, §8e's forced-tool-use content still isn't 100% compliance-guaranteed) and defensively at render time (`strip_duplicate_heading()` in `app/templating.py`, so already-generated proposals are fixed too, not just future ones). Remaining unstyled pages, if any, are bare HTML until their own turn comes.
 
 ---
 
@@ -72,6 +74,8 @@ proposals
   created_by (-> users.id), approver_id (-> users.id, nullable until submitted),
   status: draft | pending_approval | changes_requested | approved | sent
   client_token (uuid, nullable until approved), token_expires_at,
+  retired_client_token (uuid, nullable)   -- see §6b: the most recently-retired client_token, for the reopen messaging exception
+  is_regenerating (bool)   -- see §6b: shared lock while a full-document regenerate runs in the background
   first_opened_at (nullable), created_at, updated_at
 
 sections
@@ -80,18 +84,19 @@ sections
 
 section_history
   id, section_id, old_content, new_content,
-  change_type: manual_edit | regenerate,
+  change_type: manual_edit | regenerate | full_regenerate,
   triggering_comment (nullable), changed_by, created_at
 
 approval_comments
-  id, proposal_id, section_key, comment_text, created_by, created_at, resolved (bool)
+  id, proposal_id, section_key (nullable - null means a whole-document comment, see §6b), comment_text, created_by, created_at, resolved (bool)
 
 snapshots
   id, proposal_id, version_number, full_content_json, created_at
   -- written once, at the moment of approval; immutable "what the client saw"
 
 reference_files
-  id, name, storage_path, tags[], is_library (bool), uploaded_by, created_at
+  id, name, description (nullable), storage_path, tags[], is_library (bool), uploaded_by, created_at,
+  deleted_at (nullable)   -- trash marker (see §14a); NULL = live, set = pending the 30-day auto-purge
 
 proposal_references
   proposal_id, reference_file_id   -- join table; drives the "References used" list on the proposal
@@ -112,14 +117,15 @@ access_logs
 | Route | Who | Purpose |
 |---|---|---|
 | `/login` | internal users | auth |
-| `/proposals` | salesperson/approver | dashboard, filtered by `created_by = me OR approver_id = me` |
+| `/proposals` | salesperson/approver | list of proposals scoped to `created_by = me OR approver_id = me`, with tabs (All / Created / Awaiting My Approval — see §6b) |
 | `/admin/proposals` | admin | all proposals, filterable (status, client, salesperson, approver, date) |
 | `/admin/users` | admin | create/deactivate users, assign `can_create`/`can_approve` |
-| `/proposals/new` | salesperson (can_create) | intake form, required fields enforced |
-| `/proposals/{id}/edit` | salesperson | section-by-section review: edit inline, comment + regenerate, view section history |
-| `/proposals/{id}/approve` | approver (can_approve) | same rendered preview, add comments per section, Approve / Request Changes |
-| `/library` | can_create users | reusable reference file library — upload, tag, retire |
-| `/view/{token}` | client, no login | read-only rendered proposal + Download PDF button; invalid/expired token → redirect to business homepage |
+| `/proposals/new` | salesperson (can_create) | intake form, required fields enforced. Since §6c: attach up to 5 reference files (library or device upload) right here, then one "Create Proposal" click creates the proposal, attaches everything, and generates - no separate later steps |
+| `/proposals/{id}` | creator, assigned approver, or admin | **the one unified workspace page — see §6b.** Role-aware controls render on the same page based on the viewer's relationship to the proposal (`can_edit`/`can_review`, independently, not mutually exclusive): section-by-section edit/regenerate with inline Google-Docs-style comments, a "Raw Inputs" tab (creator/admin only), and Approve/Request Changes (assigned approver or admin). Replaces the original separate `/edit` and `/approve` pages below. |
+| ~~`/proposals/{id}/edit`~~ | — | **Superseded by `/proposals/{id}` (§6b).** Kept only as a 303 redirect, since real emails sent before the redesign link here. |
+| ~~`/proposals/{id}/approve`~~ | — | **Superseded by `/proposals/{id}` (§6b).** Kept only as a 303 redirect, for the same reason. |
+| `/library` | can_create users | reusable reference file library — multi-file upload with name/description, preview, and a real Trash (30-day recovery, since §6c - replaces the old "retire") |
+| `/view/{token}` | client, no login | read-only rendered proposal + Download PDF button; invalid/expired token → redirect to business homepage. A token that was live until a moment ago (the proposal was just reopened) gets a specific "being updated" message instead — see §6b. |
 
 ---
 
@@ -139,31 +145,31 @@ Dashboard visibility is a query filter, not a separate permission table: salespe
 
 ## 6. Flow per Persona
 
-**Salesperson**
+**Salesperson** *(steps 4-6 superseded by §6b - see there for the actual current flow; kept here as the original design intent)*
 1. Fill intake form (required fields enforced by the form itself).
 2. Optionally attach reference files (from library or new upload → prompted "add to library?").
 3. Claude generates the draft; any field that was blank *or* filler text gets a gap marker in that section instead of a fabricated guess.
-4. Review the rendered preview. Per section: edit manually, or leave a comment + regenerate (warns first if that section already has a manual edit, since regenerating would overwrite it).
+4. ~~Review the rendered preview. Per section: edit manually, or leave a comment + regenerate (warns first if that section already has a manual edit, since regenerating would overwrite it).~~ **Superseded (§6b):** comments on a section are left by the *approver* during review, not the salesperson while drafting; the salesperson edits/regenerates freely pre-submission and, once changes are requested, resolves the approver's comments (individually or all at once) before regenerating/editing and resubmitting.
 5. Pick an approver from the `can_approve` list, submit.
-6. If sent back with "changes requested," repeat step 4.
+6. ~~If sent back with "changes requested," repeat step 4.~~ **Superseded (§6b):** resubmitting is blocked while any comment from the prior review round is still unresolved.
 7. Once approved and sent, see delivery status and — after 7 days — a nudge notification if the client hasn't opened the link yet.
 
-**Approver**
+**Approver** *(steps 2-4 superseded by §6b - see there for the actual current flow; kept here as the original design intent)*
 1. Get an email notification with a link back into the app (login required — the email itself carries no proposal data or shortcut access).
 2. Review the same rendered preview as the salesperson.
-3. Leave section comments if changes are needed → "Request Changes" (routes back to salesperson).
-4. Or **Approve** — but only if no section still has an unresolved gap marker; approving is blocked until every gap is resolved.
+3. ~~Leave section comments if changes are needed → "Request Changes" (routes back to salesperson).~~ **Superseded (§6b):** comments are added one at a time (per-section or whole-document, Google-Docs style) while reviewing, not typed into a single fixed form alongside the Request Changes click itself; Request Changes is only enabled once at least one unresolved comment exists.
+4. ~~Or **Approve** — but only if no section still has an unresolved gap marker; approving is blocked until every gap is resolved.~~ **Superseded (§6b):** Approve is also blocked while any unresolved comment exists (not just gap markers) - the two gates are mutually exclusive, matching Approve/Request-Changes always being the mirror image of each other.
 5. On approve: snapshot frozen, client token generated, client email sent.
 
 **Admin**
-1. Invites users by email and assigns `can_create`/`can_approve` up front (§6a) — no password is set by the admin; deactivates users the same way as before.
+1. Invites users by email and assigns `can_create`/`can_approve` up front (§6a) — no password is set by the admin; deactivates users the same way as before. `can_create` now defaults to checked on the invite form and is granted to every existing user (§6b) - everyone can create a proposal by default, not just designated salespeople.
 2. Manages the reference library (tag, retire stale files).
-3. Views all proposals with filters — status, client, salesperson, approver, date range.
+3. Views all proposals with filters — status, client, salesperson, approver, date range; can open and edit anything, same as the creator would (§6b).
 
 **Client**
 1. Receives an email with a `/view/{token}` link (no login).
 2. Sees the proposal rendered read-only, with a Download PDF button that exports the exact same view.
-3. Cannot navigate anywhere else in the app — any bad/expired token redirects to the business homepage, never to an internal page or error revealing the app's existence.
+3. Cannot navigate anywhere else in the app — any bad/expired token redirects to the business homepage, never to an internal page or error revealing the app's existence. **Narrow exception (§6b):** a token that was live until a moment ago (the proposal was just reopened) gets a specific "being updated, a new link is coming" message instead of the silent redirect - a genuinely unrecognized token is unaffected.
 4. Their view is logged (timestamp, IP) — this is what triggers the salesperson's 7-day nudge if it never happens.
 
 ### 6a. Invite-Based User Creation and Forgot-Password
@@ -180,6 +186,38 @@ Both share one `account_tokens` table (`purpose`: `invite` or `reset`) - same sh
 
 **No self-serve account creation.** Both flows require an admin (or, for reset, an existing account) to already exist - there's still no public "sign up" page, matching this app's original invite-only user model (§10's role-based access decisions).
 
+**Addendum (§6b): the person completing an invite now sets their own name, not just their password.** `accept_invite.html`'s form gained a "Full Name" field, pre-filled with whatever the admin typed when creating the account but editable - `User.name` is updated alongside `password_hash` on completion. Small, independent change, but it landed alongside the redesign below since it touched the same invite-completion code path.
+
+---
+
+### 6b. Proposal Flow Redesign — Google-Docs-Style Editing & the Unified Workspace Page
+
+**Status: implemented and verified for real, post-step-16 (see `PROGRESS.md`'s dated "Proposal flow redesign" entries for the full verification detail - real DB, real Claude calls, real HTTP, real browser screenshots throughout).** §6's original persona flows described the proposal's edit/approval cycle as it was originally built: a fixed one-comment-per-section form bundled into a single "Request Changes" submission, three separate pages for creator overview / creator editing / approver review, and a reopen action that simply discarded the old client link. Direct feedback (paraphrased): the real editing experience should feel like Google Docs - inline comments you add as you're looking at a section, async regeneration that doesn't lock you out of the rest of the document, and a full-document regenerate that's clearly "busy" for everyone looking at it, not just the person who clicked the button. This section documents what actually shipped; §6 above is left as the original design record with forward-pointers into here.
+
+**One unified workspace page, not three.** `proposal_detail.html` (creator overview), `proposal_edit.html` (creator's section editor), and `proposal_approve.html` (a separate approver-only review page) are gone. `GET /proposals/{id}` now renders one page whose controls are driven by two independent booleans computed per viewer - `can_edit` (the creator, or an admin) and `can_review` (the assigned approver, or an admin). These are **not mutually exclusive**: a self-approving user, or an admin, can have both true at once, and simply sees both control sets on the same page rather than the app picking a single "mode." The old `/proposals/{id}/edit` and `/proposals/{id}/approve` URLs still exist, but purely as 303 redirects to `/proposals/{id}` - kept because real emails sent before this redesign (approver notifications, changes-requested notices) link to them.
+
+**Comments are Google-Docs style: added one at a time, inline, while reviewing - not a bundled fixed form.** `ApprovalComment.section_key` is nullable (null = a whole-document comment, not tied to one section). A small comment-icon toggle on each section (and one for the whole document) reveals a text box when clicked, otherwise stays out of the way. Each comment is its own `POST /proposals/{id}/comments` call; comments resolve individually (`POST .../comments/{id}/resolve`) or all at once (`POST .../comments/resolve-all`). The gating logic is the mirror image it was always meant to be: **Approve** is blocked while *any* unresolved comment exists (in addition to the pre-existing gap-marker gate); **Request Changes** is blocked while *zero* unresolved comments exist (nothing actionable to send back); resubmitting for approval (after changes were requested) is blocked while any comment from the prior review round remains unresolved - only once every comment is resolved can the salesperson ask for approval again.
+
+**Async per-section editing actually works now - HTMX was wired up but never actually loaded in a browser.** §2a's retrofit added the `hx-post`/`hx-target`/`hx-swap` attributes and the server-side `HX-Request` branch, but the `htmx.org` script itself was never included on any page - meaning every "async" edit/regenerate/comment action had, in every real browser, silently been falling back to the plain full-page-reload path this whole time (by design safe, since the fallback exists for JS-disabled browsers - but not the intended behavior). Caught only once this redesign was driven with an actual Playwright browser session instead of just `TestClient`. Fixed by self-hosting a pinned `htmx.org` build (`app/static/htmx.min.js`, matching this app's no-external-CDN convention for its own JS/CSS) and loading it on the workspace page. Confirmed for real: editing a section's content now fires a genuine XHR with zero page navigation, and the rest of the page stays interactive while it happens.
+
+**Full-document regenerate has a real shared lock, not just a disabled button in one browser tab.** A collapsible "Raw Inputs" tab (creator/admin only - the approver never sees it) makes the eight intake fields editable and the reference-file list manageable, plus a "Regenerate Full Proposal" action. Triggering it (after a warn-and-confirm step if any section has a manual edit that would be overwritten, same two-step pattern as per-section regenerate) sets `Proposal.is_regenerating = True`, commits, and schedules a FastAPI background task to do the several sequential Claude calls after the response has already redirected back. While that flag is true, **every** viewer's `GET /proposals/{id}` - the triggering user's included, and a completely different approver's session, not just "this browser tab is busy" - renders a small self-polling "this proposal is being updated, please wait" page instead of the real content, and every mutating route (edit, regenerate, comment, submit, approve, request-changes, reopen, reference changes) rejects with a 409 if attempted while the lock is held. Verified against a real live server with two independent HTTP sessions, not just `TestClient` (whose background tasks run synchronously and can't actually demonstrate this).
+
+**Reopening a sent/approved proposal now leaves a trace of the old link, instead of just discarding it.** The outgoing `client_token` is copied into `Proposal.retired_client_token` (only the single most recent one is kept) before being cleared. This backs one narrow, deliberate exception to §7's "a bad link reveals nothing" rule: `/view/{token}` for a token that no longer matches `client_token` but does match `retired_client_token` shows "this proposal is being updated - a new link will be sent to you shortly" instead of the generic silent homepage redirect. A genuinely unrecognized token - one that was never valid, or was retired more than one reopen ago - gets the exact same silent redirect as always; the exception only ever covers a link that really was live a moment ago. The reopen action itself now requires an explicit confirmation naming the consequence (the client's current link will be invalidated) before it fires.
+
+**The proposals list (`/proposals`) is role-scoped with filter tabs, not one flat mixed list.** Columns: client/company, creator, created date, last modified, approver (blank if none), status. An approver's list carries three tabs - **All**, **Created**, **Awaiting My Approval** - narrowing the same underlying `created_by = me OR approver_id = me` scope; a pure salesperson (no `can_approve`) never sees the tabs at all, since none of them would exclude anything they can already see. Seeing a colleague's proposal you're neither the creator nor assigned approver on still has no dedicated feature - it's the same `/view/{token}`-style copy-link mechanism as the client link, just shared internally; a **Copy Client Link** button on the workspace page (visible whenever the proposal has a live `client_token`) makes grabbing that link a one-click action instead of digging through the database.
+
+**`can_create` stays a real, admin-editable flag - it just defaults to granted for everyone now.** Originally a deliberately-assigned capability (§10); changed so every new invite defaults to checked and every existing active user was granted it in a one-time data migration, per direct instruction that "everyone can create a new proposal." An admin can still revoke it from a specific user - the flag didn't go away, only its default.
+
+---
+
+### 6c. Reference Files: Attach-During-Creation + Library Trash
+
+**Status: implemented post-§6b (2026-09-08).** Two more direct requests, planned and implemented together since both are about reference files.
+
+**Creating a proposal and attaching reference files are no longer two disconnected steps.** `/proposals/new` used to take only the 8 intake fields; attaching a reference file required a *separate* trip to the workspace page's Raw Inputs tab after the proposal already existed, followed by a *third*, separate "Generate Proposal" click. Now all of it happens on the one intake page: attach files from the shared library or upload from your own device (each upload optionally also joining the shared library, prompting for a name and short description at that point) - up to 5 per proposal, blocked with a clear message on a 6th attempt - and one "Create Proposal" click creates the proposal, attaches everything selected, calls Claude, and lands straight on the finished workspace page. Since every intake field is `NOT NULL`, there's no proposal row to attach *to* until that final click - reference files are tracked independently (a library pick just rides along as a hidden id; a device upload creates a real `ReferenceFile` row immediately) until the proposal itself is created.
+
+**The reference library gained a real Trash, replacing the old "Retire."** Retire only ever flipped `is_library` to hide a file from future proposals - no real removal, no ownership check, one file at a time, no name/description on upload. Now: upload takes several files in one submission, each with its own name and description; "Move to Trash" (owner or admin only) is a real, recoverable delete with a 30-day grace period before an item auto-purges - checked lazily on any library page load, following the same no-background-jobs precedent as the existing 7-day nudge (§9 - Render's free tier has no cron), not a real scheduled job. Trashing is blocked, naming the specific proposal(s), if the file is still attached to a `draft`/`pending_approval`/`changes_requested` proposal - an already-`approved`/`sent` proposal's reference list lives in its frozen snapshot, so it's never a blocker. Preview (open the real file inline in a new tab) and multi-select bulk trash round out the library page.
+
 ---
 
 ## 7. Edge Cases and How They're Solved
@@ -190,11 +228,14 @@ Both share one `account_tokens` table (`purpose`: `invite` or `reset`) - same sh
 | Field filled with filler/placeholder text | Claude (not form validation) judges insufficiency at generation time and inserts a gap marker instead of fabricating |
 | Approver tries to approve with unresolved gaps | Approve action is disabled/blocked until all gap markers are resolved |
 | Regenerate clicked on a manually-edited section | Warn first ("this section has manual edits — overwrite?") before regenerating |
-| Proposal edited after approval | Requires an explicit "reopen" action; reopening invalidates the old client token and issues a new one, so no live client link ever points at stale content |
+| Proposal edited after approval | Requires an explicit, confirmed "reopen" action; reopening invalidates the old client token and issues a new one on re-approval, so no live client link ever points at stale content. **Since §6b:** the old token is kept as `retired_client_token` so a client who still has that exact link is told "this is being updated," not left with silence |
 | Approver's `can_approve` revoked mid-flight | Admin can reassign the pending proposal to a different approver |
-| Approver clicks "Request Changes" with no section comment filled in | Blocked — at least one comment is required, since "request changes" with nothing said isn't actionable feedback |
+| Approver clicks "Request Changes" with no unresolved comment on the proposal | Blocked — since §6b, comments are added individually while reviewing (not typed into the Request Changes form itself); the action stays disabled until at least one unresolved comment exists |
+| Approver tries to Approve while any comment is still unresolved | **New since §6b** — blocked alongside the existing gap-marker gate; Approve and Request Changes are always each other's mirror image (one enabled only when the other is disabled) |
+| Salesperson tries to resubmit for approval while a comment from the prior review round is still unresolved | **New since §6b** — blocked with a clear message; every comment must be resolved before asking for approval again |
 | Approve / Request Changes attempted on a proposal that isn't `pending_approval` (already approved, still a draft, etc.) | Blocked with a clear error — both actions are only valid from that one status, enforced server-side, not just hidden in the UI |
-| A `can_approve` user who isn't the proposal's assigned approver opens its approve page | 403 — approval access is scoped to the specific assigned `approver_id` (or an admin), not "anyone with the capability" |
+| A `can_approve` user who isn't the proposal's assigned approver opens the proposal's workspace page | 403 — access is scoped to `can_edit` (creator or admin) or `can_review` (assigned approver or admin); having neither relationship to that specific proposal is a 403 regardless of general capability |
+| A colleague tries to write to a proposal while its full-document regenerate is in progress | **New since §6b** — every mutating route (edit, regenerate, comment, submit, approve, request-changes, reopen, reference changes) returns 409 while `Proposal.is_regenerating` is true; every viewer's page shows a "please wait" placeholder instead of stale or half-updated content in the meantime |
 | Claude API fails/times out | Intake data is saved *before* calling Claude, so a failed generation never loses the salesperson's input — just retry |
 | Claude returns malformed output | Validate response shape before writing to `sections`; on mismatch, surface "generation failed, retry" rather than saving garbage |
 | Regenerate spam (cost control) | Soft cap on regenerations per section |
@@ -267,7 +308,7 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 
 **Explicitly not supported: `.docx`, `.xlsx`, `.pptx` (or their legacy `.doc`/`.xls`/`.ppt` equivalents).** These are rejected at upload with a message asking the user to convert the file to PDF first, rather than a generic "unsupported file type" error — deliberately, not because it was out of time to build:
 - Claude does not read Office Open XML formats natively the way it reads a PDF. The mechanism behind products like Claude.ai accepting a `.docx` upload is Anthropic's **Skills** feature (an Anthropic-managed skill per format, e.g. `skill_id: "docx"`) running inside a sandboxed **code-execution container** — Claude executes real parsing code against the file, it doesn't "read the bytes" the way it does a PDF.
-- That mechanism needs three things this app doesn't have and wasn't worth adding for this scope: (1) uploading the file via Anthropic's separate Files API first, not just a request content block; (2) the `code_execution` tool plus a `container.skills` entry for the format; (3) most importantly, skills run via an autonomous tool call, which cannot happen in the same call as this app's forced `tool_choice` (the hard rule behind every generate/regenerate call, per `CLAUDE.md` — structured output is always forced tool-use, never free-form parsing). Supporting Office formats this way would mean a **separate preliminary call per file** (auto tool-choice, code execution enabled) before the existing structured-output call — a second Anthropic API surface, added latency (container start-up), and a new billing dimension (container runtime) this build's cost analysis (§8) never covered.
+- That mechanism needs three things this app doesn't have and wasn't worth adding for this scope: (1) uploading the file via Anthropic's separate Files API first, not just a request content block; (2) the `code_execution` tool plus a `container.skills` entry for the format; (3) most importantly, skills run via an autonomous tool call, which cannot happen in the same call as this app's forced `tool_choice` (the hard rule behind every generate/regenerate call, per `CLAUDE.md` — structured output is always forced tool-use, never free-form parsing; see §8e for why that rule exists in the first place). Supporting Office formats this way would mean a **separate preliminary call per file** (auto tool-choice, code execution enabled) before the existing structured-output call — a second Anthropic API surface, added latency (container start-up), and a new billing dimension (container runtime) this build's cost analysis (§8) never covered.
 - Two lighter alternatives were also considered and rejected: extracting text/images locally via pure-Python libraries (`python-docx`/`python-pptx`/`openpyxl`) — layout/positioning wouldn't be preserved, a smaller version of the same fidelity concern that ruled out `pypdf` for PDFs; and converting to PDF server-side via LibreOffice headless — pixel-perfect, but requires a system-level binary that isn't pip-installable, changing the deployment target from a stock Python buildpack to a custom Docker image (a §9/step 16 concern, not a library choice).
 - Given all three routes carry a real cost (new API surface, fidelity loss, or infra change) for a format this app can simply ask the user to convert instead, the decision was to not support Office formats at all rather than pick the least-bad option.
 
@@ -309,6 +350,19 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 
 **Why `cc`/`reply_to` are per-call parameters, not global settings:** unlike `EMAIL_FROM_ADDRESS`/`EMAIL_FROM_NAME`, which really are fixed, app-wide config, who gets CC'd and who a reply should reach depends on *which proposal* the email is about — specifically, its creator. Baking that into global settings would make every email CC the same person regardless of who actually owns the proposal; it has to be resolved per-send from the proposal's own data.
 
+### 8e. Forced Tool-Use: Why Every Claude Call Returns a Tool Call, Never Prose
+
+**Status: implemented in step 6, standing rule since.** Every call to Claude in this app (`app/services/proposal_generation.py`) sets `tool_choice={"type": "tool", "name": "<tool_name>"}` — Claude is *forced* to respond by calling a specific tool with a specific input schema, never free to answer in prose. This was a build-time decision, not something this spec originally specified, and it was never given its own write-up here — it's referenced only in passing at §8b as a constraint on Office-file support. Documented properly here since "why a tool call was used" should be checkable in one place, not just implied by a passing mention.
+
+**Why, concretely:**
+- **The alternative — asking Claude to "reply with JSON" in prose and parsing the response — is measurably more fragile.** Free-form JSON-in-prose can be preceded/followed by commentary, wrapped in markdown code fences inconsistently, or subtly malformed in ways a regex/strip-based parser has to guess around. A forced tool call instead returns an already-structured `tool_use.input` dict directly from the API - there's no text to parse at all, because there was never freeform text to begin with.
+- **This app's own requirement makes the difference concrete, not theoretical.** Spec §7 requires validating response shape before writing anything to the DB, and surfacing "generation failed, retry" on a mismatch — rather than saving a guess. Forced tool-use plus a `input_schema` (required keys, types) is what makes "the shape is either right or it's a `GenerationError`" enforceable at all; parsed-from-prose JSON has no equivalent schema contract to validate against before that parsing even happens.
+- **It composes with a second validation layer, not instead of one.** The tool's `input_schema` is Claude's-side contract; every response is *also* validated against a Pydantic model (`GeneratedSections`/`SectionOutput`) before touching the DB - two independent checks, not "trust the tool schema and skip validating." See `_call_claude_validated()`.
+
+**What this ruled out, and why it stayed ruled out:** Anthropic's Skills feature (the mechanism behind Claude.ai reading `.docx`/`.xlsx` uploads) runs via an *autonomous* tool call inside a code-execution container - fundamentally incompatible with a single call that's already forced onto one specific structured-output tool. This is the actual, concrete reason Office reference-file formats aren't supported natively (§8b) - not an oversight, a direct consequence of this decision.
+
+**The real-world cost of getting this partially wrong, and how it was actually caught (step 7):** even with forced tool-use, Claude's *content* toward the model's own tool call can still misbehave - real testing found Claude leaking a stray `</content>` closing tag plus a leaked `has_gap` marker into the `content` string on single-section regenerate calls, well above baseline (see `PROGRESS.md` step 7 for the exact reproduction). Critically, this failure was **not independent random noise**: one specific section ("Deliverables," naturally written as a bulleted list) reproduced the identical malformed output across six separate calls, because a failed regenerate never overwrites the stored draft, so every retry re-fed Claude the same problematic input. A blind "just retry" approach - which is all forced tool-use alone would have bought - doesn't fix a failure that's deterministically tied to specific content. The actual fix was a targeted repair function (`_repair_leaked_output`) that recognizes the specific leak pattern via regex, extracts the real payload, and re-validates it before giving up - "validate before writing" from §7, made tolerant enough to recover a near-miss instead of discarding it. The lesson generalized into a standing rule (`CLAUDE.md`): a new reproducible malformed-output pattern gets a targeted repair function, not just more retries.
+
 ---
 
 ## 9. Deployment Decisions
@@ -330,7 +384,7 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 - Document approach: web preview that renders exactly as the PDF, downloadable as that same PDF
 - Approval flow: comment-per-section → targeted regenerate → in-app approval → shareable link
 - Database: Postgres
-- Role model: capability-based (`can_create`/`can_approve`), self-approval allowed
+- Role model: capability-based (`can_create`/`can_approve`), self-approval allowed. **Since §6b: `can_create` defaults to granted for everyone** (every invite, every existing user) rather than a deliberately-assigned few — it stays a real, admin-revocable flag, just with a different default
 - Client access: unguessable UUID token, 30-day expiry, access logging, no email-confirmation gate
 - Visibility: creator/approver see their own; admin sees all with filters
 - Versioning: section-level history + frozen approval snapshot
@@ -339,7 +393,10 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 - Approver notification: email with a link back into the app (login required)
 - Intake validation: required fields compulsory on the form; filler text is Claude's job to catch, not the form's
 - Approval gate: blocked while unresolved gap markers exist
-- Reopen behavior: invalidates old client token, issues a new one
+- Reopen behavior: invalidates old client token, issues a new one on re-approval. **Since §6b:** the old token is kept (as `retired_client_token`) rather than discarded, specifically so a client who still has that exact link can be told it's being updated instead of getting silence — a narrow, deliberate exception to the "bad link reveals nothing" rule, scoped only to a link that really was valid a moment ago
+- Full-document regenerate lock (§6b): a real shared lock (`is_regenerating` DB flag + a background task), not just a disabled button in the triggering browser tab — chosen so every viewer, not only whoever clicked, sees the "please wait" state
+- Unified workspace page (§6b): consolidate the three separate creator-overview/creator-edit/approver-review pages into one role-aware page, rather than keeping them separate and adding comment/lock features to each independently
+- Comment model (§6b): Google-Docs-style inline comments added one at a time while reviewing (optionally on the whole document, not just one section), replacing the original single fixed per-section comment bundled into the Request Changes submission
 - Scope boundary: tool's job ends at delivery/download, no negotiation loop
 - Feature: 7-day unopened-link nudge notification to the salesperson
 - Client link expiry: 30 days

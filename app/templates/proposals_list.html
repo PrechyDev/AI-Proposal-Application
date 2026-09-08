@@ -2,37 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>My Proposals — AI Proposal Application</title>
+  <title>My Proposals — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <p><a href="/dashboard">&larr; Dashboard</a></p>
-  <h1>My Proposals ({{ proposals|length }})</h1>
+  {% include "_navbar.html" %}
 
-  {% if proposals %}
-  <table border="1" cellpadding="6" cellspacing="0">
-    <tr>
-      <th>Client</th><th>Company</th><th>Status</th><th>Created By</th><th>Approver</th><th>Updated</th><th></th>
-    </tr>
-    {% for p in proposals %}
-    <tr>
-      <td>{{ p.client_name }}</td>
-      <td>{{ p.company_name }}</td>
-      <td>{{ p.status }}</td>
-      <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
-      <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
-      <td>{{ p.updated_at }}</td>
-      <td>
-        {% if p.created_by == user.id %}
-        <a href="/proposals/{{ p.id }}">Open</a>
-        {% elif p.approver_id == user.id %}
-        <a href="/proposals/{{ p.id }}/approve">Open</a>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <p><em>Nothing here yet.</em></p>
-  {% endif %}
+  <div class="page">
+    <div class="page-header">
+      <h1>My Proposals</h1>
+    </div>
+
+    {% if user.can_approve %}
+    <div class="tab-bar">
+      <a href="/proposals?tab=all" class="tab-link {% if active_tab == 'all' %}is-active{% endif %}">All</a>
+      <a href="/proposals?tab=created" class="tab-link {% if active_tab == 'created' %}is-active{% endif %}">Created</a>
+      <a href="/proposals?tab=awaiting" class="tab-link {% if active_tab == 'awaiting' %}is-active{% endif %}">Awaiting My Approval</a>
+    </div>
+    {% endif %}
+
+    {% if proposals %}
+    <div style="overflow-x: auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Creator</th>
+            <th>Created</th>
+            <th>Last Modified</th>
+            <th>Approver</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in proposals %}
+          <tr>
+            <td><a href="/proposals/{{ p.id }}">{{ p.client_name }}</a><div class="cell-meta">{{ p.company_name }}</div></td>
+            <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
+            <td class="cell-meta">{{ p.created_at.strftime('%Y-%m-%d') }}</td>
+            <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+            <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
+            <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
+            <td><a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">Nothing here yet.</div>
+    {% endif %}
+  </div>
 </body>
 </html>

@@ -2,38 +2,228 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Proposal for {{ content.proposal.client_name }} — Koya Talent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Proposal for {{ content.proposal.company_name }} — Koya Talent</title>
   <style>
+    :root {
+      --color-primary: #1F2D3D;
+      --color-accent: #B8863B;
+      --color-text: #3A4655;
+      --color-muted: #6B7280;
+      --color-bg: #F7F5F2;
+      --color-surface: #FFFFFF;
+      --color-border: #E5E1DA;
+      --font-heading: Georgia, 'Times New Roman', serif;
+      --font-body: Arial, Helvetica, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 40px 16px;
+      background-color: var(--color-bg);
+      font-family: var(--font-body);
+      color: var(--color-text);
+    }
+
+    .paper {
+      max-width: 760px;
+      margin: 0 auto;
+      background-color: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 56px 64px;
+    }
+
+    .wordmark {
+      font-family: var(--font-heading);
+      font-size: 15px;
+      font-weight: bold;
+      color: var(--color-accent);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin: 0 0 20px;
+    }
+
+    .doc-title {
+      font-family: var(--font-heading);
+      font-size: 30px;
+      line-height: 1.25;
+      color: var(--color-primary);
+      margin: 0 0 16px;
+    }
+
+    .doc-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 24px;
+      font-size: 13px;
+      color: var(--color-muted);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+      border-bottom: 3px solid var(--color-accent);
+    }
+
+    .doc-meta strong {
+      color: var(--color-text);
+      font-weight: bold;
+    }
+
+    .pdf-link {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 10;
+      padding: 10px 20px;
+      background-color: var(--color-accent);
+      color: #FFFFFF;
+      font-size: 13px;
+      font-weight: bold;
+      text-decoration: none;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(31, 45, 61, 0.25);
+    }
+
+    .pdf-link:hover {
+      background-color: #a3762f;
+    }
+
+    section + section {
+      margin-top: 36px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-heading);
+      font-size: 20px;
+      color: var(--color-primary);
+      margin: 0 0 14px;
+    }
+
+    .section-title::before {
+      content: "";
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background-color: var(--color-accent);
+      flex-shrink: 0;
+    }
+
+    .section-body {
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .section-body :first-child {
+      margin-top: 0;
+    }
+
+    .section-body :last-child {
+      margin-bottom: 0;
+    }
+
+    .section-body ul,
+    .section-body ol {
+      padding-left: 22px;
+    }
+
+    .section-body li + li {
+      margin-top: 6px;
+    }
+
+    .references-block {
+      margin-top: 40px;
+      padding: 20px 24px;
+      background-color: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+    }
+
+    .references-block h2 {
+      font-family: var(--font-heading);
+      font-size: 15px;
+      color: var(--color-primary);
+      margin: 0 0 10px;
+    }
+
+    .references-block ul {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 14px;
+      color: var(--color-text);
+    }
+
+    .signoff {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--color-border);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .signoff .signoff-company {
+      color: var(--color-muted);
+    }
+
     @media print {
-      .no-print { display: none; }
+      .no-print {
+        display: none;
+      }
+      body {
+        padding: 0;
+        background-color: #FFFFFF;
+      }
+      .paper {
+        max-width: none;
+        border: none;
+        border-radius: 0;
+        padding: 0;
+      }
+      section {
+        break-inside: avoid;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>Proposal for {{ content.proposal.client_name }} ({{ content.proposal.company_name }})</h1>
-  <p>Prepared by {{ content.proposal.salesperson_name }}<br>
-    Date: {{ content.proposal.date_of_call[:10] }}</p>
+  <a href="/view/{{ token }}/pdf" class="pdf-link no-print">Download as PDF</a>
 
-  <p class="no-print">
-    <a href="/view/{{ token }}/pdf">Download as PDF</a>
-  </p>
+  <div class="paper">
+    <p class="wordmark">Koya Talent</p>
+    <h1 class="doc-title">Proposal for {{ content.proposal.company_name }}</h1>
+    <div class="doc-meta">
+      <span><strong>Prepared by:</strong> {{ content.proposal.salesperson_name }}</span>
+      <span><strong>Date:</strong> {{ prepared_date.strftime('%Y-%m-%d') }}</span>
+    </div>
 
-  {% for section in content.sections %}
-  <h2>{{ section.title }}</h2>
-  <div>{{ section.content | markdown }}</div>
-  {% endfor %}
-
-  {% if content.references %}
-  <h2>References Used</h2>
-  <ul>
-    {% for ref in content.references %}
-    <li>{{ ref.name }}{% if ref.tags %} ({{ ref.tags|join(', ') }}){% endif %}</li>
+    {% for section in content.sections %}
+    <section>
+      <h2 class="section-title">{{ section.title }}</h2>
+      <div class="section-body">{{ section.content | strip_dup_heading(section.title) | markdown }}</div>
+    </section>
     {% endfor %}
-  </ul>
-  {% endif %}
 
-  <p>Warm regards,<br>
-    {{ content.proposal.salesperson_name }}<br>
-    Koya Talent</p>
+    {% if content.references %}
+    <div class="references-block">
+      <h2>References Used</h2>
+      <ul>
+        {% for ref in content.references %}
+        <li>{{ ref.name }}{% if ref.tags %} ({{ ref.tags|join(', ') }}){% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="signoff">
+      <p>
+        Warm regards,<br>
+        {{ content.proposal.salesperson_name }}<br>
+        <span class="signoff-company">Koya Talent</span>
+      </p>
+    </div>
+  </div>
 </body>
 </html>

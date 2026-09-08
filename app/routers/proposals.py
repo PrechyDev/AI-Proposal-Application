@@ -2,14 +2,14 @@ import logging
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
 from app.config import get_settings
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import (
     ApprovalComment,
     DeliveryLog,
@@ -56,6 +56,7 @@ REQUIRED_TEXT_FIELDS = [
 @router.get("")
 def list_my_proposals(
     request: Request,
+    tab: str = "all",
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
@@ -63,13 +64,23 @@ def list_my_proposals(
     created_by = me OR approver_id = me" - every status, not just what's
     actionable right now (that's what /dashboard's narrower widgets are
     for); this is the full history a salesperson or approver would want to
-    browse.
+    browse. `tab` narrows that same base scope for an approver (who sees
+    both their own created proposals and the ones they're reviewing mixed
+    together) into "All" / "Created" / "Awaiting My Approval" - a
+    salesperson with no approver relationships never has rows the latter
+    two tabs would exclude, so the tabs only render when they'd do
+    anything (`user.can_approve`).
     """
-    proposals = db.execute(
-        select(Proposal)
-        .where(or_(Proposal.created_by == user.id, Proposal.approver_id == user.id))
-        .order_by(Proposal.updated_at.desc())
-    ).scalars().all()
+    base_scope = or_(Proposal.created_by == user.id, Proposal.approver_id == user.id)
+    query = select(Proposal).where(base_scope)
+    if tab == "created":
+        query = query.where(Proposal.created_by == user.id)
+    elif tab == "awaiting":
+        query = query.where(Proposal.approver_id == user.id, Proposal.status == "pending_approval")
+    else:
+        tab = "all"
+
+    proposals = db.execute(query.order_by(Proposal.updated_at.desc())).scalars().all()
 
     person_ids = {p.created_by for p in proposals} | {p.approver_id for p in proposals if p.approver_id}
     people = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(person_ids))).scalars().all()}
@@ -77,15 +88,246 @@ def list_my_proposals(
     return templates.TemplateResponse(
         request=request,
         name="proposals_list.html",
-        context={"proposals": proposals, "people": people, "user": user},
+        context={"proposals": proposals, "people": people, "user": user, "active_tab": tab},
+    )
+
+
+MAX_NEW_PROPOSAL_REFERENCES = 5
+
+
+def _render_new_proposal(
+    request: Request,
+    db: Session,
+    user: User,
+    values: dict | None = None,
+    reference_file_ids: list[int] | None = None,
+    error: str | None = None,
+    status_code: int = 200,
+):
+    values = values or {}
+    reference_file_ids = reference_file_ids or []
+
+    attached_references: list[ReferenceFile] = []
+    if reference_file_ids:
+        by_id = {
+            f.id: f
+            for f in db.execute(
+                select(ReferenceFile).where(ReferenceFile.id.in_(reference_file_ids))
+            ).scalars().all()
+        }
+        # Preserve the order files were attached in, not whatever order the
+        # IN() query happens to return.
+        attached_references = [by_id[i] for i in reference_file_ids if i in by_id]
+
+    attachable_library_files = db.execute(
+        select(ReferenceFile)
+        .where(
+            ReferenceFile.is_library.is_(True),
+            ReferenceFile.deleted_at.is_(None),
+            ReferenceFile.id.notin_(reference_file_ids),
+        )
+        .order_by(ReferenceFile.name)
+    ).scalars().all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="proposal_new.html",
+        context={
+            "user": user,
+            "error": error,
+            "values": values,
+            "attached_references": attached_references,
+            "attachable_library_files": attachable_library_files,
+            "reference_file_ids": reference_file_ids,
+            "max_references": MAX_NEW_PROPOSAL_REFERENCES,
+        },
+        status_code=status_code,
     )
 
 
 @router.get("/new")
-def new_proposal_form(request: Request, user: User = Depends(require_can_create)):
-    return templates.TemplateResponse(
-        request=request, name="proposal_new.html", context={"error": None, "values": {}}
+def new_proposal_form(request: Request, db: Session = Depends(get_db), user: User = Depends(require_can_create)):
+    return _render_new_proposal(request, db, user)
+
+
+def _validate_intake_fields(values: dict, date_of_call: str) -> tuple[list[str], datetime | None]:
+    errors = []
+    for field, label in REQUIRED_TEXT_FIELDS:
+        if not values[field].strip():
+            errors.append(f"{label} is required.")
+
+    if not EMAIL_RE.match(values["client_email"].strip()):
+        errors.append("Client email must be a valid email address.")
+
+    parsed_date = None
+    try:
+        parsed_date = datetime.strptime(date_of_call.strip(), "%Y-%m-%d")
+    except ValueError:
+        errors.append("Date of call must be a valid date.")
+    return errors, parsed_date
+
+
+@router.post("/new/attach-library")
+def attach_library_files_to_new_proposal(
+    request: Request,
+    library_file_ids: list[int] = Form(default=[]),
+    reference_file_ids: list[int] = Form(default=[]),
+    client_name: str = Form(""),
+    client_email: str = Form(""),
+    company_name: str = Form(""),
+    date_of_call: str = Form(""),
+    client_needs_summary: str = Form(""),
+    project_scope: str = Form(""),
+    goals_and_objectives: str = Form(""),
+    recommended_services: str = Form(""),
+    proposed_timeline: str = Form(""),
+    estimated_pricing: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    """Adds one or more existing (non-trashed) library files to the
+    in-progress proposal's tracked reference list - no Proposal row exists
+    yet, so there's nothing to link a ProposalReference to; the tracked list
+    just rides along as hidden fields until the real "Create Proposal"
+    submit. Intake values are carried through untouched so switching tabs
+    to pick references doesn't lose anything already typed.
+    """
+    values = {
+        "client_name": client_name, "client_email": client_email, "company_name": company_name,
+        "date_of_call": date_of_call, "client_needs_summary": client_needs_summary,
+        "project_scope": project_scope, "goals_and_objectives": goals_and_objectives,
+        "recommended_services": recommended_services, "proposed_timeline": proposed_timeline,
+        "estimated_pricing": estimated_pricing,
+    }
+    merged = list(reference_file_ids)
+    for file_id in library_file_ids:
+        if file_id not in merged:
+            merged.append(file_id)
+
+    if len(merged) > MAX_NEW_PROPOSAL_REFERENCES:
+        return _render_new_proposal(
+            request, db, user, values=values, reference_file_ids=reference_file_ids,
+            error=f"Maximum {MAX_NEW_PROPOSAL_REFERENCES} reference files per proposal - "
+            "remove one before attaching another.",
+            status_code=400,
+        )
+    return _render_new_proposal(request, db, user, values=values, reference_file_ids=merged)
+
+
+@router.post("/new/upload-reference")
+def upload_reference_for_new_proposal(
+    request: Request,
+    files: list[UploadFile] = File(default=[]),
+    description: str = Form(""),
+    add_to_library: str = Form(""),
+    reference_file_ids: list[int] = Form(default=[]),
+    client_name: str = Form(""),
+    client_email: str = Form(""),
+    company_name: str = Form(""),
+    date_of_call: str = Form(""),
+    client_needs_summary: str = Form(""),
+    project_scope: str = Form(""),
+    goals_and_objectives: str = Form(""),
+    recommended_services: str = Form(""),
+    proposed_timeline: str = Form(""),
+    estimated_pricing: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    """Uploads one or more files from the salesperson's device before the
+    proposal row exists - creates real ReferenceFile rows immediately
+    (there's no proposal_id yet to defer to), tracked the same way a
+    library pick is. "Also add to library" and the description apply to
+    the whole batch (each file keeps its own filename as its name) - for
+    per-file naming/description, the Reference Library page's own upload
+    form is the place for that level of care; this is the quick path.
+    """
+    values = {
+        "client_name": client_name, "client_email": client_email, "company_name": company_name,
+        "date_of_call": date_of_call, "client_needs_summary": client_needs_summary,
+        "project_scope": project_scope, "goals_and_objectives": goals_and_objectives,
+        "recommended_services": recommended_services, "proposed_timeline": proposed_timeline,
+        "estimated_pricing": estimated_pricing,
+    }
+
+    files = [f for f in files if f.filename]
+    if not files:
+        return _render_new_proposal(
+            request, db, user, values=values, reference_file_ids=reference_file_ids,
+            error="Choose at least one file to upload.", status_code=400,
+        )
+
+    attached_ids = list(reference_file_ids)
+    errors = []
+    for file in files:
+        if len(attached_ids) >= MAX_NEW_PROPOSAL_REFERENCES:
+            errors.append(
+                f"Maximum {MAX_NEW_PROPOSAL_REFERENCES} reference files per proposal - "
+                f"'{file.filename}' and any remaining files were not added."
+            )
+            break
+
+        content = file.file.read()
+        try:
+            storage_path = upload_reference_file(file.filename or "", content)
+        except ReferenceFileError as exc:
+            errors.append(f"'{file.filename}': {exc}")
+            continue
+
+        reference_file = ReferenceFile(
+            name=file.filename,
+            description=description.strip() or None,
+            storage_path=storage_path,
+            is_library=(add_to_library == "yes"),
+            uploaded_by=user.id,
+        )
+        db.add(reference_file)
+        db.flush()
+        attached_ids.append(reference_file.id)
+
+    db.commit()
+    logger.info(
+        "User id=%s uploaded %d reference file(s) before creating a proposal (%d failed)",
+        user.id, len(attached_ids) - len(reference_file_ids), len(errors),
     )
+    return _render_new_proposal(
+        request, db, user, values=values, reference_file_ids=attached_ids,
+        error=" ".join(errors) if errors else None, status_code=400 if errors else 200,
+    )
+
+
+@router.post("/new/remove-reference")
+def remove_reference_from_new_proposal(
+    request: Request,
+    remove_reference_file_id: int = Form(...),
+    reference_file_ids: list[int] = Form(default=[]),
+    client_name: str = Form(""),
+    client_email: str = Form(""),
+    company_name: str = Form(""),
+    date_of_call: str = Form(""),
+    client_needs_summary: str = Form(""),
+    project_scope: str = Form(""),
+    goals_and_objectives: str = Form(""),
+    recommended_services: str = Form(""),
+    proposed_timeline: str = Form(""),
+    estimated_pricing: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    """Only detaches the id from the tracked list for this in-progress
+    proposal - if it was a device upload never added to the library, the
+    ReferenceFile row itself is left as an orphan (harmless; matches the
+    same accepted trade-off as abandoning this page entirely mid-flow).
+    """
+    values = {
+        "client_name": client_name, "client_email": client_email, "company_name": company_name,
+        "date_of_call": date_of_call, "client_needs_summary": client_needs_summary,
+        "project_scope": project_scope, "goals_and_objectives": goals_and_objectives,
+        "recommended_services": recommended_services, "proposed_timeline": proposed_timeline,
+        "estimated_pricing": estimated_pricing,
+    }
+    remaining = [i for i in reference_file_ids if i != remove_reference_file_id]
+    return _render_new_proposal(request, db, user, values=values, reference_file_ids=remaining)
 
 
 @router.post("/new")
@@ -105,6 +347,7 @@ def create_proposal(
     recommended_services: str = Form(""),
     proposed_timeline: str = Form(""),
     estimated_pricing: str = Form(""),
+    reference_file_ids: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
     user: User = Depends(require_can_create),
 ):
@@ -121,27 +364,22 @@ def create_proposal(
         "estimated_pricing": estimated_pricing,
     }
 
-    errors = []
-    for field, label in REQUIRED_TEXT_FIELDS:
-        if not values[field].strip():
-            errors.append(f"{label} is required.")
-
-    if not EMAIL_RE.match(client_email.strip()):
-        errors.append("Client email must be a valid email address.")
-
-    parsed_date = None
-    try:
-        parsed_date = datetime.strptime(date_of_call.strip(), "%Y-%m-%d")
-    except ValueError:
-        errors.append("Date of call must be a valid date.")
+    errors, parsed_date = _validate_intake_fields(values, date_of_call)
 
     if errors:
-        return templates.TemplateResponse(
-            request=request,
-            name="proposal_new.html",
-            context={"error": " ".join(errors), "values": values},
-            status_code=400,
+        return _render_new_proposal(
+            request, db, user, values=values, reference_file_ids=reference_file_ids,
+            error=" ".join(errors), status_code=400,
         )
+
+    # Defensive re-check - the hidden field could in principle be tampered
+    # with client-side; only the first N are ever honored either way.
+    reference_file_ids = reference_file_ids[:MAX_NEW_PROPOSAL_REFERENCES]
+    valid_reference_ids = set(
+        db.execute(
+            select(ReferenceFile.id).where(ReferenceFile.id.in_(reference_file_ids))
+        ).scalars().all()
+    )
 
     proposal = Proposal(
         client_name=client_name.strip(),
@@ -160,7 +398,20 @@ def create_proposal(
     db.add(proposal)
     db.commit()
     db.refresh(proposal)
-    logger.info("User id=%s created proposal id=%s", user.id, proposal.id)
+
+    for reference_file_id in reference_file_ids:
+        if reference_file_id in valid_reference_ids:
+            db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file_id))
+    db.commit()
+    logger.info(
+        "User id=%s created proposal id=%s with %d reference file(s)",
+        user.id, proposal.id, len(valid_reference_ids & set(reference_file_ids)),
+    )
+
+    # Whether or not Claude succeeds, intake + references are already saved -
+    # the workspace page's own empty-state "Generate Proposal" button covers
+    # a retry, so a generation failure here never loses the submission.
+    _generate_sections_for_proposal(proposal, db)
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
@@ -171,6 +422,30 @@ def _get_viewable_proposal(proposal_id: int, db: Session, user: User) -> Proposa
     if proposal.created_by != user.id and not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted to view this proposal")
     return proposal
+
+
+def get_role_flags(proposal: Proposal, user: User) -> tuple[bool, bool]:
+    """(can_edit, can_review) - independent, not mutually exclusive: a
+    self-approving user or an admin can have both at once on the same
+    proposal, and the unified workspace page renders controls for each
+    flag separately rather than picking one "mode." Admin bypasses both,
+    matching the bypass this app has always given admins on both sides
+    (_get_viewable_proposal here, _get_proposal_for_approver in
+    approvals.py) - not a new decision, just named in one shared place.
+    """
+    can_edit = proposal.created_by == user.id or user.is_admin
+    can_review = proposal.approver_id == user.id or user.is_admin
+    return can_edit, can_review
+
+
+def get_workspace_proposal(proposal_id: int, db: Session, user: User) -> tuple[Proposal, bool, bool]:
+    proposal = db.get(Proposal, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proposal not found")
+    can_edit, can_review = get_role_flags(proposal, user)
+    if not can_edit and not can_review:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted to view this proposal")
+    return proposal, can_edit, can_review
 
 
 def _get_attached_references(proposal: Proposal, db: Session) -> list[ReferenceFile]:
@@ -205,18 +480,100 @@ def _get_delivery_logs(proposal: Proposal, db: Session) -> list[DeliveryLog]:
     ).scalars().all()
 
 
-def _render_detail(request: Request, db: Session, proposal: Proposal, error: str | None = None, status_code: int = 200):
-    sections = db.execute(
-        select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
+def _get_whole_doc_comments(proposal: Proposal, db: Session) -> list[ApprovalComment]:
+    return db.execute(
+        select(ApprovalComment)
+        .where(ApprovalComment.proposal_id == proposal.id, ApprovalComment.section_key.is_(None))
+        .order_by(ApprovalComment.created_at.desc())
     ).scalars().all()
+
+
+def _regen_guard(
+    request: Request, db: Session, proposal: Proposal, user: User, section_key: str | None = None
+):
+    """Blocks any write while a full-document regenerate is in flight, so
+    nothing races the background task that's rewriting every section at
+    once - returns a response to short-circuit the caller, or None to let
+    it proceed normally. In practice the workspace page's own wait-state
+    (in `_render_workspace`) already keeps a fresh page load from showing
+    any actionable controls at all; this only matters for a stale page (one
+    that loaded before the regenerate started) still being submitted.
+    """
+    if not proposal.is_regenerating:
+        return None
+    msg = "This proposal is being regenerated in full - please wait for it to finish."
+    if section_key and _is_htmx(request):
+        return _render_section_fragment(request, db, proposal, section_key, user, section_error=msg)
+    return _render_workspace(request, db, proposal, user, error=msg, status_code=409)
+
+
+def _render_workspace(
+    request: Request,
+    db: Session,
+    proposal: Proposal,
+    user: User,
+    error: str | None = None,
+    status_code: int = 200,
+    pending_section_key: str | None = None,
+    pending_comment: str = "",
+    pending_is_overwrite: bool = False,
+    pending_full_regenerate_confirm: bool = False,
+    pending_intake_values: dict | None = None,
+):
+    """The one page everyone looks at (Google-Docs style) - replaces the
+    old three-way split across proposal_detail.html (creator overview),
+    proposal_edit.html (creator's section editor), and proposal_approve.html
+    (a separate approver-only review page). `can_edit`/`can_review` gate
+    which controls render; both can be true at once (self-approval, or an
+    admin), in which case the viewer just sees both sets of controls -
+    there's no single "mode" to pick between.
+    """
+    can_edit, can_review = get_role_flags(proposal, user)
+
+    # A full-document regenerate is in flight (a background task is
+    # rewriting every section at once) - every viewer, not just whoever
+    # triggered it, sees this instead of the real page until it clears.
+    # Self-polls via htmx rather than a dedicated status endpoint: fetching
+    # this same URL again naturally stops needing to poll once
+    # is_regenerating flips back to false, since that response then
+    # contains the real page instead of another poll trigger.
+    if proposal.is_regenerating:
+        return templates.TemplateResponse(
+            request=request,
+            name="proposal_regenerating.html",
+            context={"proposal": proposal, "user": user},
+            status_code=status_code,
+        )
+
+    section_views = _build_section_views(db, proposal)
     delivery_logs = _get_delivery_logs(proposal, db)
+    whole_doc_comments = _get_whole_doc_comments(proposal, db)
+    has_unresolved_gap = any(v["section"].has_gap_marker for v in section_views)
+    has_unresolved_comments = bool(
+        [c for c in whole_doc_comments if not c.resolved]
+    ) or any(v["unresolved_comments"] for v in section_views)
+
     return templates.TemplateResponse(
         request=request,
-        name="proposal_detail.html",
+        name="proposal_workspace.html",
         context={
             "proposal": proposal,
-            "sections": sections,
+            "user": user,
+            "can_edit": can_edit,
+            "can_review": can_review,
+            "client_view_url": (
+                f"{get_settings().app_base_url}/view/{proposal.client_token}" if proposal.client_token else None
+            ),
+            "section_views": section_views,
+            "whole_doc_comments": whole_doc_comments,
+            "has_unresolved_gap": has_unresolved_gap,
+            "has_unresolved_comments": has_unresolved_comments,
             "error": error,
+            "pending_section_key": pending_section_key,
+            "pending_comment": pending_comment,
+            "pending_is_overwrite": pending_is_overwrite,
+            "pending_full_regenerate_confirm": pending_full_regenerate_confirm,
+            "pending_intake_values": pending_intake_values,
             "attached_references": _get_attached_references(proposal, db),
             "attachable_library_files": _get_attachable_library_files(proposal, db),
             "approvers": _get_approvers(db),
@@ -239,8 +596,8 @@ def view_proposal(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    proposal = _get_viewable_proposal(proposal_id, db, user)
-    return _render_detail(request, db, proposal)
+    proposal, _can_edit, _can_review = get_workspace_proposal(proposal_id, db, user)
+    return _render_workspace(request, db, proposal, user)
 
 
 @router.post("/{proposal_id}/submit")
@@ -252,16 +609,28 @@ def submit_proposal(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
 
     if proposal.status not in ("draft", "changes_requested"):
-        return _render_detail(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error=f"Can't submit a proposal that is already '{proposal.status}'.",
             status_code=400,
         )
     if not db.execute(select(Section).where(Section.proposal_id == proposal.id)).scalars().first():
-        return _render_detail(
-            request, db, proposal, error="Generate the proposal before submitting it.", status_code=400
+        return _render_workspace(
+            request, db, proposal, user, error="Generate the proposal before submitting it.", status_code=400
+        )
+    if db.execute(
+        select(ApprovalComment).where(
+            ApprovalComment.proposal_id == proposal.id, ApprovalComment.resolved.is_(False)
+        )
+    ).scalars().first():
+        return _render_workspace(
+            request, db, proposal, user,
+            error="Resolve every comment from the last review round before resubmitting for approval.",
+            status_code=400,
         )
 
     approver = None
@@ -272,8 +641,8 @@ def submit_proposal(
             )
         ).scalar_one_or_none()
     if approver is None:
-        return _render_detail(
-            request, db, proposal, error="Pick a valid approver to submit this proposal.", status_code=400
+        return _render_workspace(
+            request, db, proposal, user, error="Pick a valid approver to submit this proposal.", status_code=400
         )
 
     proposal.approver_id = approver.id
@@ -282,7 +651,7 @@ def submit_proposal(
     logger.info("User id=%s submitted proposal id=%s to approver id=%s", user.id, proposal.id, approver.id)
 
     settings = get_settings()
-    review_url = f"{settings.app_base_url}/proposals/{proposal.id}/approve"
+    review_url = f"{settings.app_base_url}/proposals/{proposal.id}"
     try:
         send_email(
             to=approver.email,
@@ -317,10 +686,12 @@ def reopen_proposal(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
 
     if proposal.status not in ("approved", "sent"):
-        return _render_detail(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error=f"Can't reopen a proposal that is '{proposal.status}' - only an approved or sent one.",
             status_code=400,
         )
@@ -329,8 +700,12 @@ def reopen_proposal(
     # client link ever points at stale content") - a new token is issued the
     # next time this proposal is approved (step 10), not here, since an
     # unapproved/reopened proposal shouldn't have a live client-facing link
-    # at all.
+    # at all. The outgoing token is kept as `retired_client_token` (only the
+    # single most recent one - each reopen overwrites it) so a client who
+    # still has that exact link gets "this is being updated" instead of the
+    # generic "link doesn't exist" redirect every other bad token gets.
     proposal.status = "draft"
+    proposal.retired_client_token = proposal.client_token
     proposal.client_token = None
     proposal.token_expires_at = None
     db.commit()
@@ -346,14 +721,16 @@ def send_to_client(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
 
     # Idempotency check (spec section 7: "Duplicate send - only send if
     # status isn't already sent"). A prior failed attempt leaves status at
     # "approved", not "sent", so a retry after a failure is still allowed -
     # only a proposal that has actually succeeded once is locked out.
     if proposal.status != "approved":
-        return _render_detail(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error=f"Can't send a proposal that is '{proposal.status}' - it must be approved (and not already sent).",
             status_code=400,
         )
@@ -407,6 +784,8 @@ def attach_references(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
 
     already_attached = {
         row for row in db.execute(
@@ -439,6 +818,8 @@ def remove_reference(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
     # Detaches from this proposal only - never deletes the ReferenceFile row
     # or its storage object, so it stays available (in the library, or still
     # attached to any other proposal that also cites it).
@@ -466,11 +847,13 @@ def upload_reference_for_proposal(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
     content = file.file.read()
     try:
         storage_path = upload_reference_file(file.filename or "", content)
     except ReferenceFileError as exc:
-        return _render_detail(request, db, proposal, error=str(exc), status_code=400)
+        return _render_workspace(request, db, proposal, user, error=str(exc), status_code=400)
 
     reference_file = ReferenceFile(
         name=file.filename,
@@ -490,34 +873,19 @@ def upload_reference_for_proposal(
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
-@router.post("/{proposal_id}/generate")
-def generate_sections(
-    proposal_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_can_create),
-):
-    proposal = _get_viewable_proposal(proposal_id, db, user)
-
-    existing_count = db.execute(
-        select(Section).where(Section.proposal_id == proposal.id)
-    ).scalars().first()
-    if existing_count is not None:
-        return _render_detail(
-            request, db, proposal,
-            error="This proposal already has generated sections. Use per-section regenerate to update them.",
-            status_code=400,
-        )
-
+def _generate_sections_for_proposal(proposal: Proposal, db: Session) -> bool:
+    """Shared by the standalone "Generate Proposal" route below and the new
+    intake flow's immediate-generate-on-create path. Returns True on success
+    (sections created and committed); False on a Claude failure - the
+    caller's job to decide how to surface that (both callers currently just
+    show/redirect to the workspace page's own empty-state retry button
+    rather than losing already-saved intake/reference data).
+    """
     try:
         generated = generate_proposal_sections(proposal, db)
     except GenerationError as exc:
         logger.warning("Generation failed for proposal id=%s: %s", proposal.id, exc)
-        return _render_detail(
-            request, db, proposal,
-            error="Generation failed - the AI service did not return a usable proposal. Please try again.",
-            status_code=502,
-        )
+        return False
 
     for sort_order, key in enumerate(SECTION_KEYS):
         section_output = getattr(generated, key)
@@ -532,6 +900,169 @@ def generate_sections(
         )
     db.commit()
     logger.info("Generated %d sections for proposal id=%s", len(SECTION_KEYS), proposal.id)
+    return True
+
+
+@router.post("/{proposal_id}/generate")
+def generate_sections(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
+
+    existing_count = db.execute(
+        select(Section).where(Section.proposal_id == proposal.id)
+    ).scalars().first()
+    if existing_count is not None:
+        return _render_workspace(
+            request, db, proposal, user,
+            error="This proposal already has generated sections. Use per-section regenerate to update them.",
+            status_code=400,
+        )
+
+    if not _generate_sections_for_proposal(proposal, db):
+        return _render_workspace(
+            request, db, proposal, user,
+            error="Generation failed - the AI service did not return a usable proposal. Please try again.",
+            status_code=502,
+        )
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+def _run_full_regenerate(proposal_id: int, user_id: int) -> None:
+    """Runs in a FastAPI BackgroundTask, after the triggering request has
+    already returned - needs its own DB session (the request's `db` is
+    closed by the time this executes). Regenerates every section from the
+    (possibly just-edited) intake fields and always clears
+    `is_regenerating` in `finally`, even on failure, so the proposal never
+    gets stuck showing the "please wait" placeholder forever - a failed
+    attempt just leaves the existing sections untouched.
+    """
+    db = SessionLocal()
+    try:
+        proposal = db.get(Proposal, proposal_id)
+        if proposal is None:
+            return
+        try:
+            generated = generate_proposal_sections(proposal, db)
+        except GenerationError as exc:
+            logger.warning("Full regenerate failed for proposal id=%s: %s", proposal_id, exc)
+            return
+
+        existing = {
+            s.section_key: s
+            for s in db.execute(select(Section).where(Section.proposal_id == proposal.id)).scalars().all()
+        }
+        for sort_order, key in enumerate(SECTION_KEYS):
+            section_output = getattr(generated, key)
+            section = existing.get(key)
+            if section is None:
+                db.add(
+                    Section(
+                        proposal_id=proposal.id, section_key=key, content=section_output.content,
+                        sort_order=sort_order, has_gap_marker=section_output.has_gap,
+                    )
+                )
+                continue
+            old_content = section.content
+            section.content = section_output.content
+            section.has_gap_marker = section_output.has_gap
+            section.sort_order = sort_order
+            db.add(
+                SectionHistory(
+                    section_id=section.id, old_content=old_content, new_content=section_output.content,
+                    change_type="full_regenerate", triggering_comment=None, changed_by=user_id,
+                )
+            )
+        db.commit()
+        logger.info("Full regenerate completed for proposal id=%s (%d sections)", proposal.id, len(SECTION_KEYS))
+    except Exception:
+        logger.exception("Full regenerate crashed for proposal id=%s", proposal_id)
+    finally:
+        try:
+            proposal = db.get(Proposal, proposal_id)
+            if proposal is not None:
+                proposal.is_regenerating = False
+                db.commit()
+        finally:
+            db.close()
+
+
+@router.post("/{proposal_id}/regenerate-full")
+def regenerate_full(
+    proposal_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    client_name: str = Form(""),
+    client_email: str = Form(""),
+    company_name: str = Form(""),
+    date_of_call: str = Form(""),
+    client_needs_summary: str = Form(""),
+    project_scope: str = Form(""),
+    goals_and_objectives: str = Form(""),
+    recommended_services: str = Form(""),
+    proposed_timeline: str = Form(""),
+    estimated_pricing: str = Form(""),
+    confirm_overwrite: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    """Regenerates every section from scratch (the "Raw Inputs" tab's
+    action) - unlike per-section regenerate, this always needs the real
+    shared lock (`is_regenerating`) since it touches every section at once
+    and takes several sequential Claude calls, long enough that every
+    viewer (not just whoever clicked the button) needs to see a "please
+    wait" state rather than a stale or half-updated page.
+    """
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
+
+    values = {
+        "client_name": client_name, "client_email": client_email, "company_name": company_name,
+        "client_needs_summary": client_needs_summary, "project_scope": project_scope,
+        "goals_and_objectives": goals_and_objectives, "recommended_services": recommended_services,
+        "proposed_timeline": proposed_timeline, "estimated_pricing": estimated_pricing,
+    }
+    errors, parsed_date = _validate_intake_fields(values, date_of_call)
+    if errors:
+        return _render_workspace(request, db, proposal, user, error=" ".join(errors), status_code=400)
+
+    has_manual_edits = db.execute(
+        select(SectionHistory.id)
+        .join(Section, Section.id == SectionHistory.section_id)
+        .where(Section.proposal_id == proposal.id, SectionHistory.change_type == "manual_edit")
+        .limit(1)
+    ).scalar_one_or_none()
+    if has_manual_edits and confirm_overwrite != "yes":
+        return _render_workspace(
+            request, db, proposal, user,
+            error="One or more sections have manual edits that a full regenerate would overwrite. "
+            "Confirm below to continue anyway.",
+            status_code=409,
+            pending_full_regenerate_confirm=True,
+            pending_intake_values={**values, "date_of_call": date_of_call},
+        )
+
+    proposal.client_name = client_name.strip()
+    proposal.client_email = client_email.strip().lower()
+    proposal.company_name = company_name.strip()
+    proposal.date_of_call = parsed_date
+    proposal.client_needs_summary = client_needs_summary.strip()
+    proposal.project_scope = project_scope.strip()
+    proposal.goals_and_objectives = goals_and_objectives.strip()
+    proposal.recommended_services = recommended_services.strip()
+    proposal.proposed_timeline = proposed_timeline.strip()
+    proposal.estimated_pricing = estimated_pricing.strip()
+    proposal.is_regenerating = True
+    db.commit()
+    logger.info("User id=%s started a full regenerate for proposal id=%s", user.id, proposal.id)
+
+    background_tasks.add_task(_run_full_regenerate, proposal.id, user.id)
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
@@ -583,32 +1114,6 @@ def _build_section_views(db: Session, proposal: Proposal) -> list[dict]:
     return views
 
 
-def _render_edit(
-    request: Request,
-    db: Session,
-    proposal: Proposal,
-    error: str | None = None,
-    status_code: int = 200,
-    pending_section_key: str | None = None,
-    pending_comment: str = "",
-    pending_is_overwrite: bool = False,
-):
-    return templates.TemplateResponse(
-        request=request,
-        name="proposal_edit.html",
-        context={
-            "proposal": proposal,
-            "section_views": _build_section_views(db, proposal),
-            "error": error,
-            "pending_section_key": pending_section_key,
-            "pending_comment": pending_comment,
-            "pending_is_overwrite": pending_is_overwrite,
-            "attached_references": _get_attached_references(proposal, db),
-        },
-        status_code=status_code,
-    )
-
-
 def _is_htmx(request: Request) -> bool:
     return request.headers.get("hx-request") == "true"
 
@@ -618,6 +1123,7 @@ def _render_section_fragment(
     db: Session,
     proposal: Proposal,
     section_key: str,
+    user: User,
     section_error: str | None = None,
     pending_overwrite: bool = False,
     pending_comment: str = "",
@@ -626,9 +1132,13 @@ def _render_section_fragment(
     for an HTMX swap - the spec's own reason for choosing HTMX (section 2:
     "edit a section, see it update, without disturbing the rest of the
     page"). Plain (non-HTMX) form submits never hit this - they keep the
-    original full-page redirect via `_render_edit`, so the app still works
-    with JS disabled.
+    original full-page redirect via `_render_workspace`, so the app still
+    works with JS disabled. `can_edit`/`can_review` are recomputed from
+    `user` here (not assumed from which router called this) since either
+    a creator-side action or an approver-side comment can trigger this
+    same swap, and a self-approving/admin user can have both at once.
     """
+    can_edit, can_review = get_role_flags(proposal, user)
     views = _build_section_views(db, proposal)
     view = next(v for v in views if v["section"].section_key == section_key)
     return templates.TemplateResponse(
@@ -637,6 +1147,8 @@ def _render_section_fragment(
         context={
             "proposal": proposal,
             "view": view,
+            "can_edit": can_edit,
+            "can_review": can_review,
             "section_error": section_error,
             "pending_overwrite": pending_overwrite,
             "pending_comment": pending_comment,
@@ -645,16 +1157,11 @@ def _render_section_fragment(
 
 
 @router.get("/{proposal_id}/edit")
-def edit_proposal(
-    proposal_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_can_create),
-):
-    proposal = _get_viewable_proposal(proposal_id, db, user)
-    if not db.execute(select(Section).where(Section.proposal_id == proposal.id)).scalars().first():
-        return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
-    return _render_edit(request, db, proposal)
+def edit_proposal_redirect(proposal_id: int):
+    """The old separate editing page - now folded into the one unified
+    workspace page. Kept as a redirect (not removed outright) since real
+    emails already sent (changes-requested notifications) link here."""
+    return RedirectResponse(url=f"/proposals/{proposal_id}", status_code=303)
 
 
 @router.post("/{proposal_id}/sections/{section_key}/edit")
@@ -667,15 +1174,17 @@ def edit_section(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user, section_key=section_key)) is not None:
+        return guard
     section = _get_section(proposal, section_key, db)
 
     new_content = content.strip()
     if not new_content:
         if _is_htmx(request):
             return _render_section_fragment(
-                request, db, proposal, section_key, section_error="Section content can't be empty."
+                request, db, proposal, section_key, user, section_error="Section content can't be empty."
             )
-        return _render_edit(request, db, proposal, error="Section content can't be empty.", status_code=400)
+        return _render_workspace(request, db, proposal, user, error="Section content can't be empty.", status_code=400)
 
     old_content = section.content
     section.content = new_content
@@ -695,8 +1204,8 @@ def edit_section(
     db.commit()
     logger.info("User id=%s manually edited section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
     if _is_htmx(request):
-        return _render_section_fragment(request, db, proposal, section_key)
-    return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
+        return _render_section_fragment(request, db, proposal, section_key, user)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
 @router.post("/{proposal_id}/sections/{section_key}/regenerate")
@@ -710,6 +1219,8 @@ def regenerate_section_route(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user, section_key=section_key)) is not None:
+        return guard
     section = _get_section(proposal, section_key, db)
     title = SECTION_TITLES.get(section_key, section_key)
 
@@ -726,9 +1237,9 @@ def regenerate_section_route(
             f"Edit it manually instead."
         )
         if _is_htmx(request):
-            return _render_section_fragment(request, db, proposal, section_key, section_error=limit_error)
-        return _render_edit(
-            request, db, proposal, error=limit_error, status_code=400, pending_section_key=section_key
+            return _render_section_fragment(request, db, proposal, section_key, user, section_error=limit_error)
+        return _render_workspace(
+            request, db, proposal, user, error=limit_error, status_code=400, pending_section_key=section_key
         )
 
     pending_manual_edit = bool(history) and history[0].change_type == "manual_edit"
@@ -736,11 +1247,11 @@ def regenerate_section_route(
         overwrite_error = f"'{title}' has a manual edit that regenerating would overwrite."
         if _is_htmx(request):
             return _render_section_fragment(
-                request, db, proposal, section_key,
+                request, db, proposal, section_key, user,
                 section_error=overwrite_error, pending_overwrite=True, pending_comment=comment,
             )
-        return _render_edit(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error=overwrite_error,
             status_code=409,
             pending_section_key=section_key,
@@ -756,9 +1267,9 @@ def regenerate_section_route(
         )
         generation_error = "Regeneration failed - the AI service did not return a usable section. Please try again."
         if _is_htmx(request):
-            return _render_section_fragment(request, db, proposal, section_key, section_error=generation_error)
-        return _render_edit(
-            request, db, proposal, error=generation_error, status_code=502, pending_section_key=section_key
+            return _render_section_fragment(request, db, proposal, section_key, user, section_error=generation_error)
+        return _render_workspace(
+            request, db, proposal, user, error=generation_error, status_code=502, pending_section_key=section_key
         )
 
     old_content = section.content
@@ -777,8 +1288,8 @@ def regenerate_section_route(
     db.commit()
     logger.info("User id=%s regenerated section id=%s (proposal id=%s)", user.id, section.id, proposal.id)
     if _is_htmx(request):
-        return _render_section_fragment(request, db, proposal, section_key)
-    return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
+        return _render_section_fragment(request, db, proposal, section_key, user)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
 @router.post("/{proposal_id}/comments/{comment_id}/resolve")
@@ -790,6 +1301,8 @@ def resolve_comment(
     user: User = Depends(require_can_create),
 ):
     proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
     comment = db.execute(
         select(ApprovalComment).where(
             ApprovalComment.id == comment_id, ApprovalComment.proposal_id == proposal.id
@@ -799,4 +1312,28 @@ def resolve_comment(
         comment.resolved = True
         db.commit()
         logger.info("User id=%s resolved approval comment id=%s (proposal id=%s)", user.id, comment_id, proposal.id)
-    return RedirectResponse(url=f"/proposals/{proposal.id}/edit", status_code=303)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+
+
+@router.post("/{proposal_id}/comments/resolve-all")
+def resolve_all_comments(
+    proposal_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
+):
+    proposal = _get_viewable_proposal(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
+    unresolved = db.execute(
+        select(ApprovalComment).where(
+            ApprovalComment.proposal_id == proposal.id, ApprovalComment.resolved.is_(False)
+        )
+    ).scalars().all()
+    for comment in unresolved:
+        comment.resolved = True
+    db.commit()
+    logger.info(
+        "User id=%s resolved all %d unresolved comment(s) on proposal id=%s", user.id, len(unresolved), proposal.id
+    )
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)

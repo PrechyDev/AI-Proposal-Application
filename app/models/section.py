@@ -5,7 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 
-CHANGE_TYPES = ("manual_edit", "regenerate")
+CHANGE_TYPES = ("manual_edit", "regenerate", "full_regenerate")
 
 
 class Section(Base):
@@ -42,7 +42,9 @@ class ApprovalComment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     proposal_id: Mapped[int] = mapped_column(ForeignKey("proposals.id"), nullable=False)
-    section_key: Mapped[str] = mapped_column(String, nullable=False)
+    # Null means a whole-document comment, not tied to any one section -
+    # the Google-Docs-style "comment on the doc as a whole" case.
+    section_key: Mapped[str | None] = mapped_column(String, nullable=True)
     comment_text: Mapped[str] = mapped_column(Text, nullable=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

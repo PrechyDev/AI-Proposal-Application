@@ -74,6 +74,22 @@ def upload_file(storage_path: str, content: bytes, content_type: str) -> None:
         raise StorageError(f"Upload failed with status {resp.status_code}")
 
 
+def delete_file(storage_path: str) -> None:
+    """Permanently removes an object from storage - used only for a real,
+    final delete (the trash's "Delete Permanently"/"Empty Trash"/auto-purge
+    paths), never for the softer "move to trash" step, which only touches
+    the DB row's `deleted_at`.
+    """
+    url = f"{_base_url()}/object/{REFERENCE_FILES_BUCKET}/{storage_path}"
+    try:
+        resp = httpx.delete(url, headers=_auth_headers(), timeout=_TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise StorageError(f"Could not reach Supabase Storage: {exc}") from None
+    if resp.status_code not in (200, 204):
+        logger.error("Supabase Storage delete failed (%s): %s", resp.status_code, resp.text)
+        raise StorageError(f"Delete failed with status {resp.status_code}")
+
+
 def download_file(storage_path: str) -> bytes:
     url = f"{_base_url()}/object/{REFERENCE_FILES_BUCKET}/{storage_path}"
     try:

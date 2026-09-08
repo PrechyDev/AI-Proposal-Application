@@ -1,8 +1,23 @@
 import html
+import re
 
 import markdown as markdown_lib
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
+
+
+def strip_duplicate_heading(text: str, title: str) -> str:
+    """Every section is rendered under its own title (a heading the template
+    already draws), but Claude occasionally opens a section's content with
+    that exact title again as its own Markdown heading (a system-prompt
+    instruction now asks it not to - see proposal_generation.py - but isn't
+    airtight, and this also cleans up proposals generated before that
+    instruction existed). Strips only a heading line at the very start of
+    the content that matches the title - never touches a heading anywhere
+    else in the body, so a genuine subsection heading later on is untouched.
+    """
+    pattern = rf"^\s*#{{1,6}}\s+{re.escape(title.strip())}\s*\n+"
+    return re.sub(pattern, "", text, count=1, flags=re.IGNORECASE)
 
 
 def render_markdown(text: str) -> Markup:
@@ -21,6 +36,7 @@ def render_markdown(text: str) -> Markup:
 
 templates = Jinja2Templates(directory="app/templates")
 templates.env.filters["markdown"] = render_markdown
+templates.env.filters["strip_dup_heading"] = strip_duplicate_heading
 
 
 def render_email(template_name: str, **context) -> str:

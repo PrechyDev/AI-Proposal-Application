@@ -24,6 +24,16 @@
   box-sizing: border-box;
 }
 
+/* The browser's own [hidden] default (display: none) is a UA-stylesheet
+   rule, easily beaten by an author rule of equal-or-higher specificity that
+   sets its own `display` (e.g. `.quick-actions { display: flex }`) - which
+   this app's own component classes do throughout. Restated here as an
+   author rule so `hidden` reliably hides an element regardless of what
+   other display-setting classes it also carries. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -91,7 +101,8 @@ a {
   color: var(--color-primary);
 }
 
-.field input {
+.field input,
+.field textarea {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
@@ -100,6 +111,10 @@ a {
   font-size: 15px;
   color: var(--color-text);
   background-color: var(--color-surface);
+}
+
+.field textarea {
+  resize: vertical;
 }
 
 .field input:focus {
@@ -213,6 +228,17 @@ a {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   flex-shrink: 0;
+}
+
+/* Same spinner, sized and colored for a light card background rather than
+   inside a solid-fill button (e.g. the full-regenerate "please wait" page). */
+.spinner-lg {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 @keyframes spin {
@@ -382,6 +408,37 @@ html.is-navigating #nav-progress-bar {
 .badge-sales {
   background-color: var(--color-accent);
   color: #FFFFFF;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 24px;
+}
+
+.tab-link {
+  display: inline-block;
+  padding: 8px 4px;
+  margin-bottom: -1px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--color-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-link + .tab-link {
+  margin-left: 16px;
+}
+
+.tab-link:hover {
+  color: var(--color-primary);
+}
+
+.tab-link.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-accent);
 }
 
 /* --- Dashboard sections --- */
@@ -625,4 +682,257 @@ html.is-navigating #nav-progress-bar {
   align-items: center;
   gap: 5px;
   font-weight: normal;
+}
+
+/* --- HTMX loading indicator (native HTMX request-class mechanism, no
+   custom JS needed) - a spinner that fades in only while its own HTMX
+   request is in flight. */
+
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  opacity: 1;
+}
+
+/* --- Proposal workspace: section cards, inline comments --- */
+
+.section-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.section-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.section-card-header h3 {
+  font-family: var(--font-heading);
+  color: var(--color-primary);
+  font-size: 17px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-content-view {
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.section-content-view :first-child {
+  margin-top: 0;
+}
+
+.comment-toggle {
+  flex-shrink: 0;
+}
+
+.comment-toggle summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: bold;
+  background-color: var(--color-bg);
+}
+
+.comment-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.comment-toggle summary.has-comments {
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+  background-color: #FBF3E7;
+}
+
+.comment-toggle[open] summary {
+  border-color: var(--color-accent);
+}
+
+.comment-popover {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background-color: var(--color-bg);
+}
+
+.comment-popover textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  margin-bottom: 8px;
+  resize: vertical;
+}
+
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.comment-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  background-color: #FBF3E7;
+  border: 1px solid #EAD9B8;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.comment-item.is-resolved {
+  background-color: var(--color-bg);
+  border-color: var(--color-border);
+  opacity: 0.75;
+}
+
+.comment-item-text {
+  color: var(--color-text);
+}
+
+.comment-item-meta {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 3px;
+}
+
+.section-edit-toggle summary {
+  list-style: none;
+  cursor: pointer;
+  color: var(--color-accent-hover);
+  font-size: 13px;
+  font-weight: bold;
+  margin: 10px 0;
+}
+
+.section-edit-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.section-edit-toggle textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.gate-note {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-top: 6px;
+}
+
+.regenerate-form {
+  margin-top: 14px;
+}
+
+.regenerate-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.regenerate-form-actions .gate-note {
+  margin-top: 0;
+}
+
+.file-menu {
+  display: inline-block;
+  position: relative;
+}
+
+.file-menu summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-muted);
+}
+
+.file-menu summary:hover {
+  background-color: var(--color-bg);
+  color: var(--color-primary);
+}
+
+.file-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.file-menu-popover {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 6px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(31, 45, 61, 0.15);
+}
+
+.file-menu-popover a,
+.file-menu-popover .link-button {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.file-menu-popover a:hover,
+.file-menu-popover .link-button:hover {
+  background-color: var(--color-bg);
+}
+
+.history-diff {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--color-text);
 }

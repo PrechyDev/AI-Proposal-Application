@@ -198,6 +198,7 @@ def _render_admin_proposals(
     request: Request,
     db: Session,
     filters: dict,
+    user: User,
     error: str | None = None,
     status_code: int = 200,
 ):
@@ -243,6 +244,7 @@ def _render_admin_proposals(
             "statuses": PROPOSAL_STATUSES,
             "filters": filters,
             "error": error,
+            "user": user,
         },
         status_code=status_code,
     )
@@ -258,12 +260,13 @@ def list_all_proposals(
     date_from: str = "",
     date_to: str = "",
     db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
 ):
     filters = {
         "status": status, "client": client, "salesperson_id": salesperson_id,
         "approver_id": approver_id, "date_from": date_from, "date_to": date_to,
     }
-    return _render_admin_proposals(request, db, filters)
+    return _render_admin_proposals(request, db, filters, user)
 
 
 @router.post("/proposals/{proposal_id}/reassign-approver")
@@ -283,10 +286,12 @@ def reassign_approver(
     empty_filters = {"status": "", "client": "", "salesperson_id": "", "approver_id": "", "date_from": "", "date_to": ""}
     proposal = db.get(Proposal, proposal_id)
     if proposal is None:
-        return _render_admin_proposals(request, db, empty_filters, error="Proposal not found.", status_code=404)
+        return _render_admin_proposals(
+            request, db, empty_filters, current_user, error="Proposal not found.", status_code=404
+        )
     if proposal.status != "pending_approval":
         return _render_admin_proposals(
-            request, db, empty_filters,
+            request, db, empty_filters, current_user,
             error=f"Can't reassign approver on a proposal that is '{proposal.status}', not 'pending_approval'.",
             status_code=400,
         )
@@ -300,7 +305,8 @@ def reassign_approver(
         ).scalar_one_or_none()
     if new_approver is None:
         return _render_admin_proposals(
-            request, db, empty_filters, error="Pick a valid, active approver to reassign to.", status_code=400
+            request, db, empty_filters, current_user,
+            error="Pick a valid, active approver to reassign to.", status_code=400
         )
 
     proposal.approver_id = new_approver.id

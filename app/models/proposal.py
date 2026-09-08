@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +41,21 @@ class Proposal(Base):
     )
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     first_opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Set to the outgoing client_token's value at the moment a proposal is
+    # reopened (app/routers/proposals.py's reopen_proposal), instead of
+    # just discarding it - lets /view/{old_token} recognize "this exact
+    # link really was valid a moment ago" and show a specific message,
+    # rather than the generic silent redirect used for a token that was
+    # never real (see client_view.py). Only the single most recently
+    # retired token is kept, not a full history.
+    retired_client_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # True while a full-document regenerate is running in the background
+    # (app/routers/proposals.py's regenerate_full route) - every viewer of
+    # this proposal, not just the person who triggered it, sees a "please
+    # wait" state while this is set, since the content is mid-rewrite.
+    is_regenerating: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

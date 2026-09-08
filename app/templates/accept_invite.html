@@ -19,6 +19,10 @@
         {% endif %}
         <form method="post" action="/accept-invite/{{ token }}" id="invite-form">
           <div class="field">
+            <label for="name">Full Name</label>
+            <input type="text" id="name" name="name" value="{{ name }}" required>
+          </div>
+          <div class="field">
             <label for="password">Password</label>
             <div class="password-wrapper">
               <input type="password" id="password" name="password" required minlength="8">

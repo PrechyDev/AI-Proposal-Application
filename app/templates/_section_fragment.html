@@ -1,77 +1,111 @@
-<div id="section-{{ view.section.section_key }}">
-  <hr>
-  <h2>{{ view.title }}
-    {% if view.section.has_gap_marker %}<span style="color: darkorange;">[Needs info]</span>{% endif %}
-  </h2>
+<div id="section-{{ view.section.section_key }}" class="section-card">
+  <div class="section-card-header">
+    <h3>
+      {{ view.title }}
+      {% if view.section.has_gap_marker %}<span class="status-pill status-changes_requested">Needs Info</span>{% endif %}
+    </h3>
+    {% if can_review %}
+    <details class="comment-toggle">
+      <summary class="{% if view.unresolved_comments %}has-comments{% endif %}" aria-label="Comment on this section">
+        &#128172;{% if view.comments|length %} {{ view.comments|length }}{% endif %}
+      </summary>
+      <div class="comment-popover">
+        <form method="post" action="/proposals/{{ proposal.id }}/comments"
+              hx-post="/proposals/{{ proposal.id }}/comments"
+              hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
+          <input type="hidden" name="section_key" value="{{ view.section.section_key }}">
+          <textarea name="comment_text" rows="2" placeholder="Add a comment on this section..." required></textarea>
+          <button type="submit" class="btn btn-sm">
+            <span class="spinner htmx-indicator"></span>
+            <span>Comment</span>
+          </button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  </div>
 
-  {% if view.unresolved_comments %}
-  <p style="color: darkred;"><strong>Approver feedback:</strong></p>
-  <ul>
-    {% for c in view.unresolved_comments %}
-    <li>{{ c.comment_text }} &mdash; {{ view.authors.get(c.created_by, "user #" ~ c.created_by) }}
-      <form method="post" action="/proposals/{{ proposal.id }}/comments/{{ c.id }}/resolve" style="display: inline;">
-        <button type="submit">Mark resolved</button>
+  {% if view.comments %}
+  <div class="comment-thread">
+    {% for c in view.comments %}
+    <div class="comment-item {% if c.resolved %}is-resolved{% endif %}">
+      <div>
+        <div class="comment-item-text">{{ c.comment_text }}</div>
+        <div class="comment-item-meta">
+          {{ view.authors.get(c.created_by, "user #" ~ c.created_by) }}
+          {% if c.resolved %}&middot; resolved{% endif %}
+        </div>
+      </div>
+      {% if can_edit and not c.resolved %}
+      <form method="post" action="/proposals/{{ proposal.id }}/comments/{{ c.id }}/resolve" class="inline-form">
+        <button type="submit" class="btn btn-sm btn-secondary">Resolve</button>
       </form>
-    </li>
+      {% endif %}
+    </div>
     {% endfor %}
-  </ul>
+  </div>
   {% endif %}
 
   {% if section_error %}
-  <p style="color: red;">{{ section_error }}</p>
+  <p class="error-message">{{ section_error }}</p>
   {% endif %}
 
+  {% if can_edit %}
   {% if pending_overwrite %}
   <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
     <input type="hidden" name="confirm_overwrite" value="yes">
     <input type="hidden" name="comment" value="{{ pending_comment }}">
-    <button type="submit">Yes, overwrite and regenerate</button>
+    <button type="submit" class="btn btn-sm">Yes, overwrite and regenerate</button>
   </form>
-  <p><a href="/proposals/{{ proposal.id }}/edit">Cancel</a></p>
+  <p class="gate-note"><a href="/proposals/{{ proposal.id }}">Cancel</a></p>
   {% endif %}
 
-  <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
-        hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
-        hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
-    <textarea name="content" rows="6" cols="90">{{ view.section.content }}</textarea><br>
-    <button type="submit">Save Edit</button>
-  </form>
+  <div class="section-content-view">{{ view.section.content | strip_dup_heading(view.title) | markdown }}</div>
+
+  <details class="section-edit-toggle">
+    <summary>Edit manually</summary>
+    <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
+          hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
+          hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
+      <textarea name="content" rows="6">{{ view.section.content }}</textarea>
+      <button type="submit" class="btn btn-sm">
+        <span class="spinner htmx-indicator"></span>
+        <span>Save Edit</span>
+      </button>
+    </form>
+  </details>
 
   <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
-        hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
-    <label>Comment to guide regeneration (optional)<br>
-      <textarea name="comment" rows="2" cols="90"></textarea>
-    </label><br>
-    <button type="submit" {% if view.regenerate_count >= view.regenerate_limit %}disabled{% endif %}>
-      Regenerate
-    </button>
-    <small>({{ view.regenerate_count }}/{{ view.regenerate_limit }} regenerations used)</small>
-  </form>
-
-  {% if view.comments %}
-  <details>
-    <summary>Approval comments ({{ view.comments|length }})</summary>
-    {% for c in view.comments %}
-    <div style="margin: 0.5em 0; padding-left: 0.5em; border-left: 2px solid #ccc;">
-      {{ c.comment_text }} &mdash; {{ view.authors.get(c.created_by, "user #" ~ c.created_by) }}
-      at {{ c.created_at }} {% if c.resolved %}<em>(resolved)</em>{% endif %}
+        hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML"
+        class="regenerate-form">
+    <div class="field">
+      <label for="regen-comment-{{ view.section.section_key }}">Comment to guide regeneration (optional)</label>
+      <textarea id="regen-comment-{{ view.section.section_key }}" name="comment" rows="2"></textarea>
     </div>
-    {% endfor %}
-  </details>
+    <div class="regenerate-form-actions">
+      <button type="submit" class="btn btn-sm btn-secondary" {% if view.regenerate_count >= view.regenerate_limit %}disabled{% endif %}>
+        <span class="spinner htmx-indicator"></span>
+        <span>Regenerate</span>
+      </button>
+      <span class="gate-note">({{ view.regenerate_count }}/{{ view.regenerate_limit }} regenerations used)</span>
+    </div>
+  </form>
+  {% else %}
+  <div class="section-content-view">{{ view.section.content | strip_dup_heading(view.title) | markdown }}</div>
   {% endif %}
 
-  <details>
-    <summary>History ({{ view.history|length }})</summary>
+  <details style="margin-top: 12px;">
+    <summary class="gate-note">History ({{ view.history|length }})</summary>
     {% for h in view.history %}
-    <div style="margin: 0.5em 0; padding-left: 0.5em; border-left: 2px solid #ccc;">
+    <div style="margin: 0.5em 0; padding-left: 0.5em; border-left: 2px solid var(--color-border);">
       <strong>{{ h.change_type }}</strong> by {{ view.authors.get(h.changed_by, "user #" ~ h.changed_by) }}
       at {{ h.created_at }}
       {% if h.triggering_comment %}<br>Comment: {{ h.triggering_comment }}{% endif %}
-      <details><summary>Old content</summary><pre>{{ h.old_content }}</pre></details>
-      <details><summary>New content</summary><pre>{{ h.new_content }}</pre></details>
+      <details><summary>Old content</summary><pre class="history-diff">{{ h.old_content }}</pre></details>
+      <details><summary>New content</summary><pre class="history-diff">{{ h.new_content }}</pre></details>
     </div>
     {% endfor %}
   </details>

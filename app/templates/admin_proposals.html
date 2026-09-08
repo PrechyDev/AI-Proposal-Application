@@ -2,75 +2,116 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>All Proposals — AI Proposal Application</title>
+  <title>All Proposals — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <p><a href="/dashboard">&larr; Dashboard</a></p>
-  <h1>All Proposals ({{ proposals|length }})</h1>
+  {% include "_navbar.html" %}
 
-  {% if error %}
-  <p style="color: red;">{{ error }}</p>
-  {% endif %}
+  <div class="page">
+    <div class="page-header">
+      <h1>All Proposals</h1>
+      <span class="count-pill {% if proposals %}has-items{% endif %}">{{ proposals|length }}</span>
+    </div>
 
-  <form method="get" action="/admin/proposals">
-    <label>Status
-      <select name="status">
-        <option value="">-- any --</option>
-        {% for s in statuses %}
-        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Client <input type="text" name="client" value="{{ filters.client }}" placeholder="name or company"></label>
-    <label>Salesperson
-      <select name="salesperson_id">
-        <option value="">-- any --</option>
-        {% for u in salespeople %}
-        <option value="{{ u.id }}" {% if filters.salesperson_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Approver
-      <select name="approver_id">
-        <option value="">-- any --</option>
-        {% for u in approvers %}
-        <option value="{{ u.id }}" {% if filters.approver_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>From <input type="date" name="date_from" value="{{ filters.date_from }}"></label>
-    <label>To <input type="date" name="date_to" value="{{ filters.date_to }}"></label>
-    <button type="submit">Filter</button>
-    <a href="/admin/proposals">Clear</a>
-  </form>
+    {% if error %}
+    <p class="error-message">{{ error }}</p>
+    {% endif %}
 
-  <table border="1" cellpadding="6" cellspacing="0">
-    <tr>
-      <th>Client</th><th>Company</th><th>Status</th><th>Salesperson</th><th>Approver</th><th>Created</th><th>Updated</th><th></th>
-    </tr>
-    {% for p in proposals %}
-    <tr>
-      <td>{{ p.client_name }}</td>
-      <td>{{ p.company_name }}</td>
-      <td>{{ p.status }}</td>
-      <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
-      <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
-      <td>{{ p.created_at.strftime('%Y-%m-%d') }}</td>
-      <td>{{ p.updated_at }}</td>
-      <td>
-        {% if p.status == "pending_approval" %}
-        <form method="post" action="/admin/proposals/{{ p.id }}/reassign-approver" style="display:inline;">
-          <select name="approver_id">
-            {% for u in approvers %}
-            <option value="{{ u.id }}" {% if p.approver_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+    <form method="get" action="/admin/proposals" class="section-card" style="margin-bottom: 24px;">
+      <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+        <div class="field" style="flex: 1; min-width: 160px;">
+          <label for="filter_status">Status</label>
+          <select name="status" id="filter_status">
+            <option value="">-- any --</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s.replace('_', ' ')|title }}</option>
             {% endfor %}
           </select>
-          <button type="submit">Reassign</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
+        </div>
+        <div class="field" style="flex: 1; min-width: 160px;">
+          <label for="filter_client">Client / Company</label>
+          <input type="text" name="client" id="filter_client" value="{{ filters.client }}" placeholder="name or company">
+        </div>
+        <div class="field" style="flex: 1; min-width: 160px;">
+          <label for="filter_salesperson">Salesperson</label>
+          <select name="salesperson_id" id="filter_salesperson">
+            <option value="">-- any --</option>
+            {% for u in salespeople %}
+            <option value="{{ u.id }}" {% if filters.salesperson_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field" style="flex: 1; min-width: 160px;">
+          <label for="filter_approver">Approver</label>
+          <select name="approver_id" id="filter_approver">
+            <option value="">-- any --</option>
+            {% for u in approvers %}
+            <option value="{{ u.id }}" {% if filters.approver_id == u.id|string %}selected{% endif %}>{{ u.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field" style="min-width: 140px;">
+          <label for="filter_from">From</label>
+          <input type="date" name="date_from" id="filter_from" value="{{ filters.date_from }}">
+        </div>
+        <div class="field" style="min-width: 140px;">
+          <label for="filter_to">To</label>
+          <input type="date" name="date_to" id="filter_to" value="{{ filters.date_to }}">
+        </div>
+      </div>
+      <div class="quick-actions" style="margin-top: 4px; margin-bottom: 0;">
+        <button type="submit" class="btn btn-sm">Filter</button>
+        <a href="/admin/proposals" class="btn btn-sm btn-secondary">Clear</a>
+      </div>
+    </form>
+
+    {% if proposals %}
+    <div style="overflow-x: auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Salesperson</th>
+            <th>Approver</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in proposals %}
+          <tr>
+            <td><a href="/proposals/{{ p.id }}">{{ p.client_name }}</a><div class="cell-meta">{{ p.company_name }}</div></td>
+            <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
+            <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
+            <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
+            <td class="cell-meta">{{ p.created_at.strftime('%Y-%m-%d') }}</td>
+            <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+            <td style="min-width: 100px;">
+              <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 6px;">
+                <a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a>
+                {% if p.status == "pending_approval" %}
+                <form method="post" action="/admin/proposals/{{ p.id }}/reassign-approver" style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                  <select name="approver_id" style="font-size: 13px; width: 100%;">
+                    {% for u in approvers %}
+                    <option value="{{ u.id }}" {% if p.approver_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-sm btn-secondary" style="width: 100%;">Reassign</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">No proposals match these filters.</div>
+    {% endif %}
+  </div>
 </body>
 </html>

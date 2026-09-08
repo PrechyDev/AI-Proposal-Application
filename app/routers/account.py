@@ -29,7 +29,9 @@ def accept_invite_form(token: str, request: Request, db: Session = Depends(get_d
         return templates.TemplateResponse(request=request, name="invite_invalid.html", status_code=400)
     user = db.get(User, account_token.user_id)
     return templates.TemplateResponse(
-        request=request, name="accept_invite.html", context={"token": token, "email": user.email, "error": None}
+        request=request,
+        name="accept_invite.html",
+        context={"token": token, "email": user.email, "name": user.name, "error": None},
     )
 
 
@@ -37,6 +39,10 @@ def accept_invite_form(token: str, request: Request, db: Session = Depends(get_d
 def accept_invite_submit(
     token: str,
     request: Request,
+    # Pre-filled from whatever the admin typed when inviting, but the
+    # person completing the invite is the one who actually knows how they
+    # want their own name to appear - editable here, not fixed by the admin.
+    name: str = Form(""),
     password: str = Form(""),
     confirm_password: str = Form(""),
     db: Session = Depends(get_db),
@@ -45,13 +51,21 @@ def accept_invite_submit(
     if account_token is None:
         return templates.TemplateResponse(request=request, name="invite_invalid.html", status_code=400)
     user = db.get(User, account_token.user_id)
+    name = name.strip()
 
+    if not name:
+        return templates.TemplateResponse(
+            request=request,
+            name="accept_invite.html",
+            context={"token": token, "email": user.email, "name": name, "error": "Name is required."},
+            status_code=400,
+        )
     if len(password) < MIN_PASSWORD_LENGTH:
         return templates.TemplateResponse(
             request=request,
             name="accept_invite.html",
             context={
-                "token": token, "email": user.email,
+                "token": token, "email": user.email, "name": name,
                 "error": f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
             },
             status_code=400,
@@ -60,14 +74,15 @@ def accept_invite_submit(
         return templates.TemplateResponse(
             request=request,
             name="accept_invite.html",
-            context={"token": token, "email": user.email, "error": "Passwords don't match."},
+            context={"token": token, "email": user.email, "name": name, "error": "Passwords don't match."},
             status_code=400,
         )
 
+    user.name = name
     user.password_hash = hash_password(password)
     consume_token(account_token)
     db.commit()
-    logger.info("User id=%s completed invite setup", user.id)
+    logger.info("User id=%s completed invite setup (name set to %r)", user.id, name)
 
     request.session[SESSION_USER_KEY] = user.id
     return RedirectResponse(url="/dashboard", status_code=303)

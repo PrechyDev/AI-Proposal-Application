@@ -25,7 +25,10 @@ def render_pdf(url: str) -> bytes:
             try:
                 page = browser.new_page()
                 page.goto(url, wait_until="networkidle", timeout=_TIMEOUT_MS)
-                return page.pdf(print_background=True)
+                return page.pdf(
+                    print_background=True,
+                    margin={"top": "0.75in", "bottom": "0.75in", "left": "0.75in", "right": "0.75in"},
+                )
             finally:
                 browser.close()
     except Exception as exc:

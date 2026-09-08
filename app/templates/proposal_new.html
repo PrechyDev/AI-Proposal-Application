@@ -2,38 +2,140 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>New Proposal — AI Proposal Application</title>
+  <title>New Proposal — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <p><a href="/dashboard">&larr; Dashboard</a></p>
-  <h1>New Proposal — Intake</h1>
-  {% if error %}
-  <p style="color: red;">{{ error }}</p>
-  {% endif %}
-  <form method="post" action="/proposals/new">
-    <label>Client Name <input type="text" name="client_name" value="{{ values.client_name or '' }}" required></label><br>
-    <label>Client Email <input type="email" name="client_email" value="{{ values.client_email or '' }}" required></label><br>
-    <label>Company Name <input type="text" name="company_name" value="{{ values.company_name or '' }}" required></label><br>
-    <label>Date of Call <input type="date" name="date_of_call" value="{{ values.date_of_call or '' }}" required></label><br>
-    <label>Summary of Client's Needs<br>
-      <textarea name="client_needs_summary" rows="3" cols="60" required>{{ values.client_needs_summary or '' }}</textarea>
-    </label><br>
-    <label>Project Scope<br>
-      <textarea name="project_scope" rows="3" cols="60" required>{{ values.project_scope or '' }}</textarea>
-    </label><br>
-    <label>Goals and Objectives<br>
-      <textarea name="goals_and_objectives" rows="3" cols="60" required>{{ values.goals_and_objectives or '' }}</textarea>
-    </label><br>
-    <label>Recommended Services or Deliverables<br>
-      <textarea name="recommended_services" rows="3" cols="60" required>{{ values.recommended_services or '' }}</textarea>
-    </label><br>
-    <label>Proposed Timeline<br>
-      <textarea name="proposed_timeline" rows="2" cols="60" required>{{ values.proposed_timeline or '' }}</textarea>
-    </label><br>
-    <label>Estimated Pricing<br>
-      <textarea name="estimated_pricing" rows="2" cols="60" required>{{ values.estimated_pricing or '' }}</textarea>
-    </label><br>
-    <button type="submit">Create Proposal</button>
-  </form>
+  {% include "_navbar.html" %}
+
+  <div class="page">
+    <div class="page-header">
+      <h1>New Proposal</h1>
+    </div>
+
+    {% if error %}
+    <p class="error-message">{{ error }}</p>
+    {% endif %}
+
+    <!--
+      Everything - intake fields, the library picker, the device-upload
+      widget, and each Remove button - lives in this one form. Attach/
+      upload/remove all use formaction (and formenctype for the file
+      upload) to send this same form's live data to a different endpoint
+      instead of the default one, so nothing typed into the intake fields
+      is ever lost by clicking a different action's button - a genuinely
+      separate <form> for each action would silently drop whatever the
+      user had typed elsewhere on the page the moment they clicked it.
+    -->
+    <form method="post" action="/proposals/new" enctype="multipart/form-data">
+      <div class="section-card">
+        <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Intake Details</h3>
+        <div class="field">
+          <label for="np_client_name">Client Name</label>
+          <input type="text" id="np_client_name" name="client_name" value="{{ values.client_name or '' }}" required>
+        </div>
+        <div class="field">
+          <label for="np_client_email">Client Email</label>
+          <input type="email" id="np_client_email" name="client_email" value="{{ values.client_email or '' }}" required>
+        </div>
+        <div class="field">
+          <label for="np_company_name">Company Name</label>
+          <input type="text" id="np_company_name" name="company_name" value="{{ values.company_name or '' }}" required>
+        </div>
+        <div class="field">
+          <label for="np_date_of_call">Date of Call</label>
+          <input type="date" id="np_date_of_call" name="date_of_call" value="{{ values.date_of_call or '' }}" required>
+        </div>
+        <div class="field">
+          <label for="np_client_needs_summary">Summary of Client's Needs</label>
+          <textarea id="np_client_needs_summary" name="client_needs_summary" rows="3" required>{{ values.client_needs_summary or '' }}</textarea>
+        </div>
+        <div class="field">
+          <label for="np_project_scope">Project Scope</label>
+          <textarea id="np_project_scope" name="project_scope" rows="3" required>{{ values.project_scope or '' }}</textarea>
+        </div>
+        <div class="field">
+          <label for="np_goals_and_objectives">Goals and Objectives</label>
+          <textarea id="np_goals_and_objectives" name="goals_and_objectives" rows="3" required>{{ values.goals_and_objectives or '' }}</textarea>
+        </div>
+        <div class="field">
+          <label for="np_recommended_services">Recommended Services or Deliverables</label>
+          <textarea id="np_recommended_services" name="recommended_services" rows="3" required>{{ values.recommended_services or '' }}</textarea>
+        </div>
+        <div class="field">
+          <label for="np_proposed_timeline">Proposed Timeline</label>
+          <textarea id="np_proposed_timeline" name="proposed_timeline" rows="2" required>{{ values.proposed_timeline or '' }}</textarea>
+        </div>
+        <div class="field" style="margin-bottom: 0;">
+          <label for="np_estimated_pricing">Estimated Pricing</label>
+          <textarea id="np_estimated_pricing" name="estimated_pricing" rows="2" required>{{ values.estimated_pricing or '' }}</textarea>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">
+          Reference Files ({{ attached_references|length }}/{{ max_references }})
+        </h3>
+        <p class="gate-note">Optional - attach up to {{ max_references }} files from the shared library or your own device. Claude will cite them directly where relevant.</p>
+
+        {% for ref in attached_references %}
+        <input type="hidden" name="reference_file_ids" value="{{ ref.id }}">
+        {% endfor %}
+
+        {% if attached_references %}
+        <div class="list" style="margin-bottom: 16px;">
+          {% for ref in attached_references %}
+          <div class="list-item">
+            <div class="list-item-main">
+              {{ ref.name }}
+              {% if ref.description %}<div class="list-item-meta">{{ ref.description }}</div>{% endif %}
+            </div>
+            <button type="submit" formaction="/proposals/new/remove-reference" formnovalidate
+                    name="remove_reference_file_id" value="{{ ref.id }}" class="btn btn-sm btn-secondary">
+              Remove
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if attached_references|length < max_references %}
+        {% if attachable_library_files %}
+        <p class="gate-note"><strong>Attach from the shared library:</strong></p>
+        <div class="checkbox-group" style="margin-bottom: 10px;">
+          {% for f in attachable_library_files %}
+          <label><input type="checkbox" name="library_file_ids" value="{{ f.id }}"> {{ f.name }}{% if f.description %} - {{ f.description }}{% endif %}</label>
+          {% endfor %}
+        </div>
+        <button type="submit" formaction="/proposals/new/attach-library" formnovalidate class="btn btn-sm btn-secondary">
+          Attach Selected
+        </button>
+        {% endif %}
+
+        <p class="gate-note" style="margin-top: 16px;"><strong>Upload from your device:</strong></p>
+        <div class="field">
+          <input type="file" name="files" multiple>
+        </div>
+        <div class="field">
+          <input type="text" name="description" placeholder="Description (optional, applied to all files uploaded here)">
+        </div>
+        <label style="font-size: 13px;"><input type="checkbox" name="add_to_library" value="yes"> Also add to the shared reference library</label><br><br>
+        <button type="submit" formaction="/proposals/new/upload-reference" formenctype="multipart/form-data" formnovalidate
+                class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
+          <span class="spinner" hidden></span>
+          <span data-btn-text>Upload and Attach</span>
+        </button>
+        {% else %}
+        <p class="gate-note">Maximum of {{ max_references }} reference files reached - remove one above to attach another.</p>
+        {% endif %}
+      </div>
+
+      <button type="submit" class="btn" data-loading-text="Creating…">
+        <span class="spinner" hidden></span>
+        <span data-btn-text>Create Proposal</span>
+      </button>
+    </form>
+  </div>
+  <script src="/static/app.js"></script>
 </body>
 </html>

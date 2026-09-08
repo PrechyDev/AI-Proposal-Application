@@ -20,9 +20,10 @@ from app.models import (
     Snapshot,
     User,
 )
+from app.routers.proposals import _is_htmx, _regen_guard, _render_section_fragment, _render_workspace
 from app.services.email import EmailError, send_email
 from app.services.proposal_generation import SECTION_TITLES
-from app.templating import render_email, templates
+from app.templating import render_email
 
 logger = logging.getLogger(__name__)
 
@@ -89,47 +90,69 @@ def _build_snapshot_content(
     }
 
 
-def _render_approve(
-    request: Request, db: Session, proposal: Proposal, error: str | None = None, status_code: int = 200
-):
-    sections = db.execute(
-        select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
+def _unresolved_comments(proposal: Proposal, db: Session) -> list[ApprovalComment]:
+    return db.execute(
+        select(ApprovalComment).where(
+            ApprovalComment.proposal_id == proposal.id, ApprovalComment.resolved.is_(False)
+        )
     ).scalars().all()
-    comments = db.execute(
-        select(ApprovalComment)
-        .where(ApprovalComment.proposal_id == proposal.id)
-        .order_by(ApprovalComment.created_at.desc())
-    ).scalars().all()
-
-    section_views = [
-        {
-            "section": s,
-            "title": SECTION_TITLES.get(s.section_key, s.section_key),
-            "comments": [c for c in comments if c.section_key == s.section_key],
-        }
-        for s in sections
-    ]
-
-    return templates.TemplateResponse(
-        request=request,
-        name="proposal_approve.html",
-        context={
-            "proposal": proposal,
-            "section_views": section_views,
-            "attached_references": _get_references(proposal, db),
-            "has_unresolved_gap": any(s.has_gap_marker for s in sections),
-            "error": error,
-        },
-        status_code=status_code,
-    )
 
 
 @router.get("/{proposal_id}/approve")
-def approve_page(
-    proposal_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_can_approve)
+def approve_page_redirect(proposal_id: int):
+    """The old separate approver-review page - now folded into the one
+    unified workspace page. Kept as a redirect (not removed outright)
+    since real emails already sent (approver notifications) link here."""
+    return RedirectResponse(url=f"/proposals/{proposal_id}", status_code=303)
+
+
+@router.post("/{proposal_id}/comments")
+def add_comment(
+    proposal_id: int,
+    request: Request,
+    section_key: str = Form(""),
+    comment_text: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_approve),
 ):
+    """Google-Docs-style: one comment added as its own small action while
+    actively reviewing, not bundled into a single request-changes submit
+    with a fixed per-section textarea. `section_key` empty means a
+    whole-document comment (spec: ApprovalComment.section_key is nullable
+    for exactly this case)."""
     proposal = _get_proposal_for_approver(proposal_id, db, user)
-    return _render_approve(request, db, proposal)
+    section_key = section_key.strip() or None
+    if (guard := _regen_guard(request, db, proposal, user, section_key=section_key)) is not None:
+        return guard
+
+    if proposal.status != "pending_approval":
+        error = f"Can't comment on a proposal that is '{proposal.status}', not pending approval."
+        if section_key and _is_htmx(request):
+            return _render_section_fragment(request, db, proposal, section_key, user, section_error=error)
+        return _render_workspace(request, db, proposal, user, error=error, status_code=400)
+
+    comment_text = comment_text.strip()
+    if not comment_text:
+        error = "Comment text can't be empty."
+        if section_key and _is_htmx(request):
+            return _render_section_fragment(request, db, proposal, section_key, user, section_error=error)
+        return _render_workspace(request, db, proposal, user, error=error, status_code=400)
+
+    db.add(
+        ApprovalComment(
+            proposal_id=proposal.id, section_key=section_key, comment_text=comment_text, created_by=user.id
+        )
+    )
+    db.commit()
+    logger.info(
+        "User id=%s added a comment to proposal id=%s (section=%s)",
+        user.id, proposal.id, section_key or "whole-document",
+    )
+    # Whole-document comments have no single section to swap in place, so
+    # they always take the full-page path even under HTMX.
+    if section_key and _is_htmx(request):
+        return _render_section_fragment(request, db, proposal, section_key, user)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
 @router.post("/{proposal_id}/approve")
@@ -137,10 +160,12 @@ def approve_proposal(
     proposal_id: int, request: Request, db: Session = Depends(get_db), user: User = Depends(require_can_approve)
 ):
     proposal = _get_proposal_for_approver(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
 
     if proposal.status != "pending_approval":
-        return _render_approve(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error=f"This proposal is '{proposal.status}', not pending approval.",
             status_code=400,
         )
@@ -149,9 +174,15 @@ def approve_proposal(
         select(Section).where(Section.proposal_id == proposal.id).order_by(Section.sort_order)
     ).scalars().all()
     if any(s.has_gap_marker for s in sections):
-        return _render_approve(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error="Every section must have its gap marker resolved before this proposal can be approved.",
+            status_code=400,
+        )
+    if _unresolved_comments(proposal, db):
+        return _render_workspace(
+            request, db, proposal, user,
+            error="This proposal has unresolved comments - request changes instead, or resolve them first.",
             status_code=400,
         )
 
@@ -180,7 +211,7 @@ def approve_proposal(
         "User id=%s approved proposal id=%s (snapshot v%d, new client token issued)",
         user.id, proposal.id, next_version,
     )
-    return RedirectResponse(url=f"/proposals/{proposal.id}/approve", status_code=303)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
 @router.post("/{proposal_id}/request-changes")
@@ -189,49 +220,37 @@ def request_changes(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_can_approve),
-    comment_introduction: str = Form(""),
-    comment_proposed_solution: str = Form(""),
-    comment_deliverables: str = Form(""),
-    comment_timeline: str = Form(""),
-    comment_pricing: str = Form(""),
-    comment_next_steps: str = Form(""),
 ):
+    """A pure status transition now - comments are added one at a time via
+    POST /comments while reviewing (Google-Docs style), not typed into a
+    fixed per-section form in the same request as this action. Gated on
+    at least one unresolved comment already existing - the mirror image
+    of approve_proposal's "blocked while any unresolved comment exists."
+    """
     proposal = _get_proposal_for_approver(proposal_id, db, user)
+    if (guard := _regen_guard(request, db, proposal, user)) is not None:
+        return guard
 
     if proposal.status != "pending_approval":
-        return _render_approve(
-            request, db, proposal,
+        return _render_workspace(
+            request, db, proposal, user,
             error=f"This proposal is '{proposal.status}', not pending approval.",
             status_code=400,
         )
 
-    comments_by_key = {
-        "introduction": comment_introduction,
-        "proposed_solution": comment_proposed_solution,
-        "deliverables": comment_deliverables,
-        "timeline": comment_timeline,
-        "pricing": comment_pricing,
-        "next_steps": comment_next_steps,
-    }
-    provided = {key: text.strip() for key, text in comments_by_key.items() if text.strip()}
-    if not provided:
-        return _render_approve(
-            request, db, proposal,
-            error="Add at least one comment explaining what needs to change.",
+    unresolved = _unresolved_comments(proposal, db)
+    if not unresolved:
+        return _render_workspace(
+            request, db, proposal, user,
+            error="Add at least one comment explaining what needs to change before requesting changes.",
             status_code=400,
         )
 
-    for section_key, comment_text in provided.items():
-        db.add(
-            ApprovalComment(
-                proposal_id=proposal.id, section_key=section_key, comment_text=comment_text, created_by=user.id
-            )
-        )
     proposal.status = "changes_requested"
     db.commit()
     logger.info(
-        "User id=%s requested changes on proposal id=%s (%d section comment(s))",
-        user.id, proposal.id, len(provided),
+        "User id=%s requested changes on proposal id=%s (%d unresolved comment(s))",
+        user.id, proposal.id, len(unresolved),
     )
 
     # created_by is a required FK, so `creator` is never actually None in
@@ -240,9 +259,13 @@ def request_changes(
     creator = db.get(User, proposal.created_by)
     if creator is not None:
         settings = get_settings()
-        edit_url = f"{settings.app_base_url}/proposals/{proposal.id}/edit"
+        edit_url = f"{settings.app_base_url}/proposals/{proposal.id}"
         comments_for_email = [
-            {"title": SECTION_TITLES.get(key, key), "text": text} for key, text in provided.items()
+            {
+                "title": SECTION_TITLES.get(c.section_key, c.section_key) if c.section_key else "Whole document",
+                "text": c.comment_text,
+            }
+            for c in unresolved
         ]
         try:
             send_email(
@@ -267,4 +290,4 @@ def request_changes(
             )
         db.commit()
 
-    return RedirectResponse(url=f"/proposals/{proposal.id}/approve", status_code=303)
+    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)

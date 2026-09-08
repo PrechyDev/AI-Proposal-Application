@@ -2,54 +2,178 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Reference Library — AI Proposal Application</title>
+  <title>Reference Library — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <p><a href="/dashboard">&larr; Dashboard</a></p>
-  <h1>Reference Library</h1>
-  <p>Reusable reference files (case studies, rate cards, past work) available to attach to any proposal.</p>
+  {% include "_navbar.html" %}
 
-  {% if error %}
-  <p style="color: red;">{{ error }}</p>
-  {% endif %}
+  <div class="page">
+    <div class="page-header">
+      <h1>Reference Library</h1>
+      <span class="count-pill {% if files %}has-items{% endif %}">{{ files|length }}</span>
+    </div>
+    <p class="gate-note" style="margin-top: -8px; margin-bottom: 20px;">
+      Reusable reference files (case studies, rate cards, past work) shared with everyone and available to attach to any proposal.
+    </p>
 
-  <h2>Upload a new reference file</h2>
-  <form method="post" action="/library/upload" enctype="multipart/form-data">
-    <label>File (.txt, .md, .pdf, .jpg, .png, .gif, .webp)<br>
-      <input type="file" name="file" required>
-    </label><br>
-    <label>Tags (comma-separated, optional)<br>
-      <input type="text" name="tags" size="60">
-    </label><br>
-    <button type="submit">Add to library</button>
-  </form>
+    {% if error %}
+    <p class="error-message">{{ error }}</p>
+    {% endif %}
 
-  <h2>Files ({{ files|length }})</h2>
-  {% if files %}
-  <table border="1" cellpadding="6" cellspacing="0">
-    <tr>
-      <th>Name</th>
-      <th>Tags</th>
-      <th>Uploaded by</th>
-      <th>Uploaded</th>
-      <th></th>
-    </tr>
-    {% for f in files %}
-    <tr>
-      <td>{{ f.name }}</td>
-      <td>{{ f.tags|join(', ') if f.tags else '' }}</td>
-      <td>{{ uploaders.get(f.uploaded_by, "user #" ~ f.uploaded_by) }}</td>
-      <td>{{ f.created_at }}</td>
-      <td>
-        <form method="post" action="/library/{{ f.id }}/retire" style="margin: 0;">
-          <button type="submit">Retire</button>
+    <div class="tab-bar">
+      <a href="/library?view=all" class="tab-link {% if view == 'all' %}is-active{% endif %}">Library</a>
+      <a href="/library?view=trash" class="tab-link {% if view == 'trash' %}is-active{% endif %}">Trash</a>
+    </div>
+
+    {% if view == 'all' %}
+    <details class="section-edit-toggle" style="margin-bottom: 24px;">
+      <summary>Upload New Reference Files</summary>
+      <div class="section-card" style="margin-top: 8px;">
+        <form method="post" action="/library/upload" enctype="multipart/form-data" id="upload-form">
+          <div class="field">
+            <label for="lib-files">Files (.txt, .md, .pdf, .jpg, .png, .gif, .webp — max 10MB each)</label>
+            <input type="file" id="lib-files" name="files" multiple required>
+          </div>
+          <div id="upload-file-rows"></div>
+          <div class="field">
+            <label for="lib-tags">Tags (comma-separated, optional, applied to all files in this upload)</label>
+            <input type="text" id="lib-tags" name="tags">
+          </div>
+          <button type="submit" class="btn" data-loading-text="Uploading…">
+            <span class="spinner" hidden></span>
+            <span data-btn-text>Add to Library</span>
+          </button>
         </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <p><em>No reference files in the library yet.</em></p>
-  {% endif %}
+      </div>
+    </details>
+
+    <form method="post" action="/library/trash-selected" id="bulk-form">
+      <div class="quick-actions" id="bulk-bar" hidden style="margin-bottom: 12px;">
+        <button type="submit" class="btn btn-secondary btn-sm">Move Selected to Trash</button>
+      </div>
+
+      {% if files %}
+      <div style="overflow-x: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 24px;"></th>
+              <th>Name</th>
+              <th>Tags</th>
+              <th>Uploaded by</th>
+              <th>Uploaded</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in files %}
+            <tr>
+              <td><input type="checkbox" name="reference_file_ids" value="{{ f.id }}" class="row-check"></td>
+              <td>
+                {{ f.name }}
+                {% if f.description %}<div class="cell-meta">{{ f.description }}</div>{% endif %}
+              </td>
+              <td>{{ f.tags|join(', ') if f.tags else '-' }}</td>
+              <td>{{ uploaders.get(f.uploaded_by, "user #" ~ f.uploaded_by) }}</td>
+              <td class="cell-meta">{{ f.created_at.strftime('%Y-%m-%d') }}</td>
+              <td>
+                <details class="file-menu">
+                  <summary aria-label="File actions">&#8942;</summary>
+                  <div class="file-menu-popover">
+                    <a href="/library/{{ f.id }}/preview" target="_blank" rel="noopener">Preview</a>
+                    {% if f.uploaded_by == user.id or user.is_admin %}
+                    <form method="post" action="/library/{{ f.id }}/trash">
+                      <button type="submit" class="link-button">Move to Trash</button>
+                    </form>
+                    {% endif %}
+                  </div>
+                </details>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">No reference files in the library yet.</div>
+      {% endif %}
+    </form>
+
+    {% else %}
+    {% if files %}
+    <form method="post" action="/library/empty-trash" style="margin-bottom: 12px;" onsubmit="return confirm('Permanently delete every file shown below? This cannot be undone.');">
+      <button type="submit" class="btn btn-secondary btn-sm">Empty Trash</button>
+    </form>
+    <div style="overflow-x: auto;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Uploaded by</th>
+            <th>Trashed</th>
+            <th>Days left</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in files %}
+          <tr>
+            <td>{{ f.name }}</td>
+            <td>{{ uploaders.get(f.uploaded_by, "user #" ~ f.uploaded_by) }}</td>
+            <td class="cell-meta">{{ f.deleted_at.strftime('%Y-%m-%d') }}</td>
+            <td class="cell-meta">{{ days_left.get(f.id, 0) }}</td>
+            <td>
+              <div class="quick-actions" style="margin: 0; gap: 8px;">
+                <form method="post" action="/library/{{ f.id }}/restore" class="inline-form">
+                  <button type="submit" class="btn btn-sm btn-secondary">Restore</button>
+                </form>
+                <form method="post" action="/library/{{ f.id }}/delete-permanent" class="inline-form" onsubmit="return confirm('Permanently delete \'{{ f.name }}\'? This cannot be undone.');">
+                  <button type="submit" class="btn btn-sm btn-secondary">Delete Permanently</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">Trash is empty.</div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <script src="/static/app.js"></script>
+  <script>
+    (function () {
+      var fileInput = document.getElementById("lib-files");
+      var rowsContainer = document.getElementById("upload-file-rows");
+      if (fileInput && rowsContainer) {
+        fileInput.addEventListener("change", function () {
+          rowsContainer.innerHTML = "";
+          Array.prototype.forEach.call(fileInput.files, function (file) {
+            var wrap = document.createElement("div");
+            wrap.style.cssText = "display:flex; gap:12px; margin-bottom:10px; align-items:flex-start;";
+            wrap.innerHTML =
+              '<div class="field" style="flex:1; margin-bottom:0;"><label>Name</label>' +
+              '<input type="text" name="names" value="' + file.name.replace(/"/g, "&quot;") + '" required></div>' +
+              '<div class="field" style="flex:2; margin-bottom:0;"><label>Description (optional)</label>' +
+              '<input type="text" name="descriptions"></div>';
+            rowsContainer.appendChild(wrap);
+          });
+        });
+      }
+
+      var bulkBar = document.getElementById("bulk-bar");
+      var checks = document.querySelectorAll(".row-check");
+      function updateBulkBar() {
+        if (!bulkBar) return;
+        var anyChecked = Array.prototype.some.call(checks, function (c) { return c.checked; });
+        bulkBar.hidden = !anyChecked;
+      }
+      checks.forEach(function (c) { c.addEventListener("change", updateBulkBar); });
+    })();
+  </script>
 </body>
 </html>

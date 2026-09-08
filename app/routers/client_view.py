@@ -25,11 +25,21 @@ router = APIRouter()
 # invalid token: redirect, never an error page.
 
 
-def _get_valid_snapshot(token: str) -> tuple[Proposal, Snapshot] | None:
+def _get_valid_snapshot(token: str) -> tuple[Proposal, Snapshot] | str | None:
     """Looks up the proposal + latest snapshot for a client token. Returns
     None for anything invalid - malformed token, no match, expired, wrong
     status, or an unexpected error - so the caller can redirect to the
     homepage uniformly, never distinguishing *why* a link doesn't work.
+
+    One narrow, deliberate exception: a token that no longer matches
+    `client_token` but does match `retired_client_token` (i.e. it was valid
+    until this proposal was just reopened for editing, a moment ago)
+    returns the literal string "retired" instead of None, so the route can
+    tell that specific client "this is being updated" rather than the
+    generic silent redirect. This doesn't weaken spec section 7's "a bad
+    link reveals nothing" rule for genuinely unrecognized tokens - those
+    still return None exactly as before; it only helps someone whose link
+    really was live a moment ago.
     """
     try:
         token_uuid = uuid.UUID(token)
@@ -43,7 +53,10 @@ def _get_valid_snapshot(token: str) -> tuple[Proposal, Snapshot] | None:
                 select(Proposal).where(Proposal.client_token == token_uuid)
             ).scalar_one_or_none()
             if proposal is None:
-                return None
+                retired = db.execute(
+                    select(Proposal).where(Proposal.retired_client_token == token_uuid)
+                ).scalar_one_or_none()
+                return "retired" if retired is not None else None
             if proposal.status not in ("approved", "sent"):
                 return None
             if proposal.token_expires_at is None or proposal.token_expires_at < datetime.now(timezone.utc):
@@ -108,12 +121,19 @@ def view_proposal(token: str, request: Request):
     result = _get_valid_snapshot(token)
     if result is None:
         return RedirectResponse(url="/", status_code=303)
+    if result == "retired":
+        return templates.TemplateResponse(request=request, name="proposal_being_updated.html", context={})
     proposal, snapshot = result
     _log_access(proposal.id, request)
     return templates.TemplateResponse(
         request=request,
         name="proposal_view.html",
-        context={"token": token, "content": snapshot.full_content_json},
+        # `prepared_date` is the snapshot's own created_at (the moment this
+        # proposal was approved) - deliberately not proposal.date_of_call
+        # (the original discovery-call date, frozen inside content itself),
+        # since the client-facing "Date" should read as "when we prepared
+        # this for you," not the older internal-process date.
+        context={"token": token, "content": snapshot.full_content_json, "prepared_date": snapshot.created_at},
     )
 
 
@@ -144,7 +164,10 @@ def _log_pdf_export(proposal_id: int, status_value: str, error_message: str | No
 @router.get("/view/{token}/pdf")
 def download_pdf(token: str):
     result = _get_valid_snapshot(token)
-    if result is None:
+    # A PDF response has no good way to show the "being updated" message, so
+    # the "retired" sentinel (see /view/{token}) is treated the same as None
+    # here - only the HTML view route has that specific messaging.
+    if result is None or result == "retired":
         return RedirectResponse(url="/", status_code=303)
     proposal, _snapshot = result
 
@@ -162,7 +185,7 @@ def download_pdf(token: str):
         )
     _log_pdf_export(proposal.id, "success")
 
-    safe_name = "".join(c if c.isalnum() else "_" for c in proposal.client_name).strip("_") or "proposal"
+    safe_name = "".join(c if c.isalnum() else "_" for c in proposal.company_name).strip("_") or "proposal"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
