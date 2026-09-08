@@ -8,30 +8,55 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import require_admin
+from app.config import get_settings
 from app.db import get_db
 from app.models import Proposal, User
 from app.models.proposal import PROPOSAL_STATUSES
-from app.security import hash_password
-from app.templating import templates
+from app.services.account_tokens import issue_invite_token
+from app.services.email import EmailError, send_email
+from app.templating import render_email, templates
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])
 
 
-def _render_users_page(request, db: Session, error: str | None = None, status_code: int = 200):
+def _render_users_page(
+    request, db: Session, current_user: User, error: str | None = None, status_code: int = 200
+):
     users = db.execute(select(User).order_by(User.id)).scalars().all()
     return templates.TemplateResponse(
         request=request,
         name="admin_users.html",
-        context={"users": users, "error": error},
+        context={"users": users, "user": current_user, "error": error},
         status_code=status_code,
     )
 
 
 @router.get("/users")
-def list_users(request: Request, db: Session = Depends(get_db)):
-    return _render_users_page(request, db)
+def list_users(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    return _render_users_page(request, db, current_user)
+
+
+def _send_invite_email(db: Session, user: User, inviter: User) -> None:
+    """Issues a fresh invite token and emails it - shared by both creating
+    a new user and resending a lost/expired invite, so the two paths can
+    never drift (spec-equivalent principle to every other email path in
+    this app: log the outcome, never let a send failure corrupt the
+    already-committed account state)."""
+    settings = get_settings()
+    raw_token = issue_invite_token(db, user)
+    db.commit()
+    accept_url = f"{settings.app_base_url}/accept-invite/{raw_token}"
+    try:
+        send_email(
+            to=user.email,
+            subject="You're invited to Koya Talent",
+            html=render_email("invite.html", name=user.name, inviter_name=inviter.name, accept_url=accept_url),
+        )
+    except EmailError as exc:
+        logger.warning("Invite email failed for user id=%s: %s", user.id, exc)
+        raise
 
 
 @router.post("/users")
@@ -41,24 +66,24 @@ def create_user(
     # drops blank urlencoded fields entirely rather than keeping "".
     name: str = Form(""),
     email: str = Form(""),
-    password: str = Form(""),
     can_create: bool = Form(False),
     can_approve: bool = Form(False),
     is_admin: bool = Form(False),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     name = name.strip()
     email = email.strip().lower()
-    if not name or not email or len(password) < 8:
-        return _render_users_page(
-            request, db, error="Name and email are required, and password must be at least 8 characters.",
-            status_code=400,
-        )
+    if not name or not email:
+        return _render_users_page(request, db, current_user, error="Name and email are required.", status_code=400)
 
+    # No password here (GitHub-style invite flow, not admin-set passwords):
+    # the user sets their own via the emailed invite link
+    # (app/routers/account.py), so password_hash starts out None.
     user = User(
         name=name,
         email=email,
-        password_hash=hash_password(password),
+        password_hash=None,
         can_create=can_create,
         can_approve=can_approve,
         is_admin=is_admin,
@@ -70,9 +95,50 @@ def create_user(
     except IntegrityError:
         db.rollback()
         logger.warning("Attempted to create duplicate user email=%s", email)
-        return _render_users_page(request, db, error=f"A user with email {email!r} already exists.", status_code=400)
+        return _render_users_page(request, db, current_user, error=f"A user with email {email!r} already exists.", status_code=400)
 
-    logger.info("Admin created user id=%s email=%s", user.id, user.email)
+    logger.info("Admin id=%s created user id=%s email=%s (invite pending)", current_user.id, user.id, user.email)
+
+    try:
+        _send_invite_email(db, user, current_user)
+    except EmailError:
+        return _render_users_page(
+            request, db, current_user,
+            error=(
+                f"User {user.email!r} was created, but the invite email failed to send. "
+                f"Use \"Resend invite\" below to try again."
+            ),
+            status_code=502,
+        )
+
+    return RedirectResponse(url="/admin/users", status_code=303)
+
+
+@router.post("/users/{user_id}/resend-invite")
+def resend_invite(
+    request: Request,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    user = db.get(User, user_id)
+    if user is None:
+        return _render_users_page(request, db, current_user, error="User not found.", status_code=404)
+    if user.password_hash is not None:
+        return _render_users_page(
+            request, db, current_user,
+            error=f"{user.email} has already set a password - nothing to resend.", status_code=400,
+        )
+
+    try:
+        _send_invite_email(db, user, current_user)
+    except EmailError:
+        return _render_users_page(
+            request, db, current_user,
+            error=f"Failed to resend the invite email to {user.email}.", status_code=502,
+        )
+
+    logger.info("Admin id=%s resent invite to user id=%s", current_user.id, user.id)
     return RedirectResponse(url="/admin/users", status_code=303)
 
 
@@ -88,11 +154,11 @@ def update_permissions(
 ):
     user = db.get(User, user_id)
     if user is None:
-        return _render_users_page(request, db, error="User not found.", status_code=404)
+        return _render_users_page(request, db, current_user, error="User not found.", status_code=404)
 
     if user.id == current_user.id and not is_admin:
         return _render_users_page(
-            request, db, error="You can't remove your own admin access.", status_code=400
+            request, db, current_user, error="You can't remove your own admin access.", status_code=400
         )
 
     user.can_create = can_create
@@ -115,11 +181,11 @@ def toggle_active(
 ):
     user = db.get(User, user_id)
     if user is None:
-        return _render_users_page(request, db, error="User not found.", status_code=404)
+        return _render_users_page(request, db, current_user, error="User not found.", status_code=404)
 
     if user.id == current_user.id and user.is_active:
         return _render_users_page(
-            request, db, error="You can't deactivate your own account.", status_code=400
+            request, db, current_user, error="You can't deactivate your own account.", status_code=400
         )
 
     user.is_active = not user.is_active

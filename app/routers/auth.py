@@ -34,7 +34,15 @@ def login_submit(
     db: Session = Depends(get_db),
 ):
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
-    if user is None or not user.is_active or not verify_password(password, user.password_hash):
+    # password_hash is None for an invited user who hasn't completed setup
+    # yet (app/routers/account.py) - checked before verify_password, which
+    # can't accept None as a hash.
+    if (
+        user is None
+        or not user.is_active
+        or user.password_hash is None
+        or not verify_password(password, user.password_hash)
+    ):
         logger.warning("Failed login attempt for email=%s", email)
         return templates.TemplateResponse(
             request=request,

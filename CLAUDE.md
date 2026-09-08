@@ -205,3 +205,13 @@ new central-inbox/CC/Reply-To architecture actually working. Id 31 ("Brevo
 Flow3 ChangesRequested") is `changes_requested` - the new notification's first
 real successful send. All three have `delivery_logs` rows with
 `status="success"` from Brevo's real API.
+
+## Invite-based user creation + forgot-password (post-step-16)
+
+`users.password_hash` is now nullable - `None` means "invited, hasn't set a
+password yet" (`app/models/tokens.py`'s `account_tokens` table backs both the
+invite-link and forgot-password-code flows; see `PROGRESS.md`'s post-step-16
+follow-up and `proposal_app_spec.md` §6a). Real-flow verification added several
+throwaway `@example.invalid` test users (`invite.test.*`, `reset.test.*`,
+`screenshot.invite.*`) - safe to ignore or delete, not meant as reusable
+fixtures like the named `*@test.local` accounts above.

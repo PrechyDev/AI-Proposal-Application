@@ -39,4 +39,44 @@
       document.documentElement.classList.remove("is-navigating");
     }
   });
+
+  // Password show/hide toggle - any <button class="password-toggle"
+  // data-target="<input id>"> gets this for free, no per-page script
+  // needed (originally written once for login.html, now shared since
+  // accept-invite/reset-password repeat the same field).
+  document.querySelectorAll(".password-toggle").forEach(function (toggleBtn) {
+    var input = document.getElementById(toggleBtn.dataset.target);
+    if (!input) return;
+    toggleBtn.addEventListener("click", function () {
+      var showing = input.type === "text";
+      input.type = showing ? "password" : "text";
+      toggleBtn.classList.toggle("is-visible", !showing);
+      toggleBtn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+    });
+  });
+
+  // Submit-button loading state - any <button type="submit"
+  // data-loading-text="..."> is disabled with a spinner and swapped text
+  // the instant its form submits (same idea as the top progress bar, but
+  // for the one control the user actually clicked). Needs its own
+  // <span class="spinner" hidden> and a text span carrying [data-btn-text].
+  document.querySelectorAll("button[type=submit][data-loading-text]").forEach(function (submitBtn) {
+    var form = submitBtn.closest("form");
+    if (!form) return;
+    var spinner = submitBtn.querySelector(".spinner");
+    var textEl = submitBtn.querySelector("[data-btn-text]");
+    var originalText = textEl ? textEl.textContent : null;
+    form.addEventListener("submit", function () {
+      submitBtn.disabled = true;
+      if (spinner) spinner.hidden = false;
+      if (textEl) textEl.textContent = submitBtn.dataset.loadingText;
+    });
+    window.addEventListener("pageshow", function (event) {
+      if (event.persisted) {
+        submitBtn.disabled = false;
+        if (spinner) spinner.hidden = true;
+        if (textEl && originalText !== null) textEl.textContent = originalText;
+      }
+    });
+  });
 })();

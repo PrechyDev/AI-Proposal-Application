@@ -1,0 +1,12 @@
+{% extends "emails/_base.html" %}
+{% block title %}You're invited to Koya Talent{% endblock %}
+{% block content %}
+<p>Hi {{ name }},</p>
+<p>{{ inviter_name }} has invited you to Koya Talent's proposal application. Click below to set your password and sign in.</p>
+<p>
+  <a href="{{ accept_url }}" style="display:inline-block; background-color:#B8863B; color:#FFFFFF; text-decoration:none; padding:10px 22px; border-radius:4px; font-weight:bold; font-size:14px;">
+    Set Your Password
+  </a>
+</p>
+<p>This link expires in 7 days. If you weren't expecting this invitation, you can ignore this email.</p>
+{% endblock %}

@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import engine, get_db
 from app.models import DeliveryLog, Proposal, User
 from app.models.proposal import PROPOSAL_STATUSES
+from app.routers.account import router as account_router
 from app.routers.admin import router as admin_router
 from app.routers.approvals import router as approvals_router
 from app.routers.auth import router as auth_router
@@ -62,6 +63,7 @@ app = FastAPI(title="AI Proposal Application", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, same_site="lax")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_router)
+app.include_router(account_router)
 app.include_router(admin_router)
 app.include_router(proposals_router)
 app.include_router(approvals_router)
