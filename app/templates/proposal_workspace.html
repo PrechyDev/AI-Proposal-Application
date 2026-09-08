@@ -20,11 +20,30 @@
       {% endif %}
     </div>
 
+    {% if can_edit and is_finalized %}
+    <div class="quick-actions" style="margin-bottom: 24px;">
+      {% if proposal.status == "sent" %}
+      <button type="button" class="btn" disabled title="Already sent to the client">Sent to Client</button>
+      {% else %}
+      <form method="post" action="/proposals/{{ proposal.id }}/send" id="send-to-client-form">
+        <button type="submit" class="btn" data-loading-text="Sending…">
+          <span class="spinner" hidden></span>
+          <span data-btn-text>{% if has_send_attempt %}Retry Send to Client{% else %}Send to Client{% endif %}</span>
+        </button>
+      </form>
+      {% endif %}
+      <form method="post" action="/proposals/{{ proposal.id }}/reopen"
+            onsubmit="return confirm('{% if proposal.status == 'sent' %}Reopen for editing? This will invalidate the client link that was already sent, and a new one will be sent once re-approved.{% else %}Reopen for editing? Any copied client link will stop working, and a new one will be issued once re-approved.{% endif %}');">
+        <button type="submit" class="btn btn-secondary">Reopen for Editing</button>
+      </form>
+    </div>
+    {% endif %}
+
     {% if error %}
     <p class="error-message">{{ error }}</p>
     {% endif %}
 
-    {% if can_edit %}
+    {% if can_edit and not is_finalized %}
     <details class="section-edit-toggle" style="margin-bottom: 24px;">
       <summary>Raw Inputs</summary>
       <div class="section-card" style="margin-top: 8px;">
@@ -135,6 +154,7 @@
     </details>
     {% endif %}
 
+    {% if not is_finalized %}
     {% if whole_doc_comments %}
     <div class="section-card">
       <div class="section-card-header">
@@ -184,6 +204,7 @@
       <p class="gate-note">No general comments yet - use this for feedback that isn't about one section.</p>
     </div>
     {% endif %}
+    {% endif %}
 
     {% if section_views %}
       {% for view in section_views %}
@@ -215,26 +236,6 @@
       <p class="gate-note">Awaiting approval.</p>
       {% endif %}
 
-      {% if can_edit and proposal.status == "approved" %}
-      <div class="quick-actions">
-        <form method="post" action="/proposals/{{ proposal.id }}/send">
-          <button type="submit" class="btn" data-loading-text="Sending…">
-            <span class="spinner" hidden></span>
-            <span data-btn-text>{% if has_send_attempt %}Retry Send to Client{% else %}Send to Client{% endif %}</span>
-          </button>
-        </form>
-        <form method="post" action="/proposals/{{ proposal.id }}/reopen" onsubmit="return confirm('Reopen for editing? This will invalidate the client link that was already sent, and a new one will be sent once re-approved.');">
-          <button type="submit" class="btn btn-secondary">Reopen for Editing</button>
-        </form>
-      </div>
-      {% elif can_edit and proposal.status == "sent" %}
-      <div class="quick-actions">
-        <form method="post" action="/proposals/{{ proposal.id }}/reopen" onsubmit="return confirm('Reopen for editing? This will invalidate the client link that was already sent, and a new one will be sent once re-approved.');">
-          <button type="submit" class="btn btn-secondary">Reopen for Editing</button>
-        </form>
-      </div>
-      {% endif %}
-
       {% if can_review and proposal.status == "pending_approval" %}
       <div class="section-card">
         <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Review Decision</h3>
@@ -243,8 +244,9 @@
         {% endif %}
         <div class="quick-actions">
           <form method="post" action="/proposals/{{ proposal.id }}/approve">
-            <button type="submit" class="btn" {% if has_unresolved_gap or has_unresolved_comments %}disabled title="Resolve unresolved comments and gaps first"{% endif %}>
-              Approve
+            <button type="submit" class="btn" data-loading-text="Approving…" {% if has_unresolved_gap or has_unresolved_comments %}disabled title="Resolve unresolved comments and gaps first"{% endif %}>
+              <span class="spinner" hidden></span>
+              <span data-btn-text>Approve</span>
             </button>
           </form>
           <form method="post" action="/proposals/{{ proposal.id }}/request-changes">
@@ -291,6 +293,40 @@
       <div class="empty-state">This proposal hasn't been generated yet.</div>
     {% endif %}
   </div>
+
+  {% if just_approved and proposal.status == "approved" %}
+  <dialog id="approved-modal" class="approved-modal">
+    <h3>Proposal Approved</h3>
+    <p>Send it to the client now, or wait until you're ready?</p>
+    <div class="quick-actions">
+      <button type="button" class="btn" id="approved-modal-send">Send to Client</button>
+      <button type="button" class="btn btn-secondary" id="approved-modal-not-yet">Not Yet</button>
+    </div>
+  </dialog>
+  <script>
+    (function () {
+      var modal = document.getElementById("approved-modal");
+      if (!modal) return;
+      modal.showModal();
+      // Strip ?just_approved=1 so a refresh or back-nav doesn't re-trigger this.
+      window.history.replaceState(null, "", window.location.pathname);
+      var sendBtn = document.getElementById("approved-modal-send");
+      var sendForm = document.getElementById("send-to-client-form");
+      if (sendBtn && sendForm) {
+        sendBtn.addEventListener("click", function () {
+          sendForm.submit();
+        });
+      }
+      var notYetBtn = document.getElementById("approved-modal-not-yet");
+      if (notYetBtn) {
+        notYetBtn.addEventListener("click", function () {
+          modal.close();
+        });
+      }
+    })();
+  </script>
+  {% endif %}
+
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -519,6 +519,7 @@ def _render_workspace(
     pending_is_overwrite: bool = False,
     pending_full_regenerate_confirm: bool = False,
     pending_intake_values: dict | None = None,
+    just_approved: bool = False,
 ):
     """The one page everyone looks at (Google-Docs style) - replaces the
     old three-way split across proposal_detail.html (creator overview),
@@ -552,6 +553,12 @@ def _render_workspace(
     has_unresolved_comments = bool(
         [c for c in whole_doc_comments if not c.resolved]
     ) or any(v["unresolved_comments"] for v in section_views)
+    # Once approved/sent, the proposal is finalized - the review UI (inline
+    # comments, per-section edit/regenerate, Raw Inputs) disappears in favor
+    # of a clean read-only view with just Send to Client / Reopen for
+    # Editing, matching a "this document is done" mental model rather than
+    # "still being worked on."
+    is_finalized = proposal.status in ("approved", "sent")
 
     return templates.TemplateResponse(
         request=request,
@@ -561,6 +568,8 @@ def _render_workspace(
             "user": user,
             "can_edit": can_edit,
             "can_review": can_review,
+            "is_finalized": is_finalized,
+            "just_approved": just_approved,
             "client_view_url": (
                 f"{get_settings().app_base_url}/view/{proposal.client_token}" if proposal.client_token else None
             ),
@@ -593,11 +602,12 @@ def _render_workspace(
 def view_proposal(
     proposal_id: int,
     request: Request,
+    just_approved: str = "",
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
     proposal, _can_edit, _can_review = get_workspace_proposal(proposal_id, db, user)
-    return _render_workspace(request, db, proposal, user)
+    return _render_workspace(request, db, proposal, user, just_approved=bool(just_approved))
 
 
 @router.post("/{proposal_id}/submit")
@@ -1149,6 +1159,7 @@ def _render_section_fragment(
             "view": view,
             "can_edit": can_edit,
             "can_review": can_review,
+            "is_finalized": proposal.status in ("approved", "sent"),
             "section_error": section_error,
             "pending_overwrite": pending_overwrite,
             "pending_comment": pending_comment,

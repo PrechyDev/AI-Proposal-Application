@@ -4,7 +4,7 @@
       {{ view.title }}
       {% if view.section.has_gap_marker %}<span class="status-pill status-changes_requested">Needs Info</span>{% endif %}
     </h3>
-    {% if can_review %}
+    {% if can_review and not is_finalized %}
     <details class="comment-toggle">
       <summary class="{% if view.unresolved_comments %}has-comments{% endif %}" aria-label="Comment on this section">
         &#128172;{% if view.comments|length %} {{ view.comments|length }}{% endif %}
@@ -25,7 +25,7 @@
     {% endif %}
   </div>
 
-  {% if view.comments %}
+  {% if view.comments and not is_finalized %}
   <div class="comment-thread">
     {% for c in view.comments %}
     <div class="comment-item {% if c.resolved %}is-resolved{% endif %}">
@@ -50,7 +50,7 @@
   <p class="error-message">{{ section_error }}</p>
   {% endif %}
 
-  {% if can_edit %}
+  {% if can_edit and not is_finalized %}
   {% if pending_overwrite %}
   <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"

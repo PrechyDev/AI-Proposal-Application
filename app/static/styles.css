@@ -936,3 +936,30 @@ html.is-navigating #nav-progress-bar {
   font-size: 13px;
   color: var(--color-text);
 }
+
+.approved-modal {
+  max-width: 380px;
+  width: 90%;
+  padding: 28px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.25);
+}
+
+.approved-modal::backdrop {
+  background-color: rgba(31, 45, 61, 0.5);
+}
+
+.approved-modal h3 {
+  font-family: var(--font-heading);
+  color: var(--color-primary);
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.approved-modal p {
+  color: var(--color-text);
+  margin: 0 0 20px;
+  font-size: 14px;
+}

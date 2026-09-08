@@ -211,7 +211,10 @@ def approve_proposal(
         "User id=%s approved proposal id=%s (snapshot v%d, new client token issued)",
         user.id, proposal.id, next_version,
     )
-    return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
+    # just_approved triggers a one-time "Approved! Send to client now?" modal
+    # on the workspace page - stripped from the URL client-side after it
+    # shows, so a refresh/back-nav doesn't keep re-triggering it.
+    return RedirectResponse(url=f"/proposals/{proposal.id}?just_approved=1", status_code=303)
 
 
 @router.post("/{proposal_id}/request-changes")
