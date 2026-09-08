@@ -1061,3 +1061,16 @@ html.is-navigating #nav-progress-bar {
 .reassign-popover {
   min-width: 200px;
 }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.pagination .btn[disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}

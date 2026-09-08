@@ -1,0 +1,15 @@
+{% if pagination.total_pages > 1 %}
+<div class="pagination">
+  {% if pagination.page > 1 %}
+  <a href="{{ base_url }}?page={{ pagination.page - 1 }}{% for k, v in extra_params.items() %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="btn btn-sm btn-secondary">&larr; Previous</a>
+  {% else %}
+  <span class="btn btn-sm btn-secondary" disabled>&larr; Previous</span>
+  {% endif %}
+  <span class="gate-note">Page {{ pagination.page }} of {{ pagination.total_pages }} ({{ pagination.total_count }} total)</span>
+  {% if pagination.page < pagination.total_pages %}
+  <a href="{{ base_url }}?page={{ pagination.page + 1 }}{% for k, v in extra_params.items() %}&{{ k }}={{ v|urlencode }}{% endfor %}" class="btn btn-sm btn-secondary">Next &rarr;</a>
+  {% else %}
+  <span class="btn btn-sm btn-secondary" disabled>Next &rarr;</span>
+  {% endif %}
+</div>
+{% endif %}

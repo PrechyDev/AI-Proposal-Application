@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_can_create
 from app.db import get_db
 from app.models import Proposal, ProposalReference, ReferenceFile, User
+from app.pagination import paginate
 from app.services.reference_files import (
     CONTENT_TYPES,
     ReferenceFileError,
@@ -75,19 +76,19 @@ def _render_library(
     view: str = "all",
     error: str | None = None,
     status_code: int = 200,
+    page: int = 1,
 ):
     if view == "trash":
         query = select(ReferenceFile).where(ReferenceFile.deleted_at.is_not(None))
         if not user.is_admin:
             query = query.where(ReferenceFile.uploaded_by == user.id)
-        files = db.execute(query.order_by(ReferenceFile.deleted_at.desc())).scalars().all()
+        files, pagination = paginate(db, query, ReferenceFile.deleted_at.desc(), page)
     else:
         view = "all"
-        files = db.execute(
-            select(ReferenceFile)
-            .where(ReferenceFile.is_library.is_(True), ReferenceFile.deleted_at.is_(None))
-            .order_by(ReferenceFile.created_at.desc())
-        ).scalars().all()
+        query = select(ReferenceFile).where(
+            ReferenceFile.is_library.is_(True), ReferenceFile.deleted_at.is_(None)
+        )
+        files, pagination = paginate(db, query, ReferenceFile.created_at.desc(), page)
 
     uploaders = {
         u.id: u.name
@@ -109,6 +110,9 @@ def _render_library(
             "view": view,
             "user": user,
             "error": error,
+            "pagination": pagination,
+            "base_url": "/library",
+            "extra_params": {"view": view},
         },
         status_code=status_code,
     )
@@ -116,10 +120,14 @@ def _render_library(
 
 @router.get("")
 def library_page(
-    request: Request, view: str = "all", db: Session = Depends(get_db), user: User = Depends(require_can_create)
+    request: Request,
+    view: str = "all",
+    page: int = 1,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_can_create),
 ):
     _purge_expired_trash(db)
-    return _render_library(request, db, user, view=view)
+    return _render_library(request, db, user, view=view, page=page)
 
 
 @router.post("/upload")

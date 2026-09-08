@@ -11,7 +11,7 @@
   <div class="page">
     <div class="page-header">
       <h1>All Proposals</h1>
-      <span class="count-pill {% if proposals %}has-items{% endif %}">{{ proposals|length }}</span>
+      <span class="count-pill {% if proposals %}has-items{% endif %}">{{ pagination.total_count }}</span>
     </div>
 
     {% if error %}
@@ -119,6 +119,7 @@
         </tbody>
       </table>
     </div>
+    {% include "_pagination.html" %}
     {% else %}
     <div class="empty-state">No proposals match these filters.</div>
     {% endif %}

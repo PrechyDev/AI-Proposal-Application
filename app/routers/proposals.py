@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_can_create, require_user
 from app.config import get_settings
 from app.db import SessionLocal, get_db
+from app.pagination import paginate
 from app.models import (
     ApprovalComment,
     DeliveryLog,
@@ -57,6 +58,7 @@ REQUIRED_TEXT_FIELDS = [
 def list_my_proposals(
     request: Request,
     tab: str = "all",
+    page: int = 1,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
@@ -80,7 +82,7 @@ def list_my_proposals(
     else:
         tab = "all"
 
-    proposals = db.execute(query.order_by(Proposal.updated_at.desc())).scalars().all()
+    proposals, pagination = paginate(db, query, Proposal.updated_at.desc(), page)
 
     person_ids = {p.created_by for p in proposals} | {p.approver_id for p in proposals if p.approver_id}
     people = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(person_ids))).scalars().all()}
@@ -88,7 +90,11 @@ def list_my_proposals(
     return templates.TemplateResponse(
         request=request,
         name="proposals_list.html",
-        context={"proposals": proposals, "people": people, "user": user, "active_tab": tab},
+        context={
+            "proposals": proposals, "people": people, "user": user, "active_tab": tab,
+            "pagination": pagination, "base_url": "/proposals",
+            "extra_params": {"tab": tab},
+        },
     )
 
 

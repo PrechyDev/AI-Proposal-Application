@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import Proposal, User
 from app.models.proposal import PROPOSAL_STATUSES
+from app.pagination import paginate
 from app.services.account_tokens import issue_invite_token
 from app.services.email import EmailError, send_email
 from app.templating import render_email, templates
@@ -201,6 +202,7 @@ def _render_admin_proposals(
     user: User,
     error: str | None = None,
     status_code: int = 200,
+    page: int = 1,
 ):
     query = select(Proposal)
     if filters["status"]:
@@ -224,7 +226,7 @@ def _render_admin_proposals(
         except ValueError:
             pass
 
-    proposals = db.execute(query.order_by(Proposal.updated_at.desc())).scalars().all()
+    proposals, pagination = paginate(db, query, Proposal.updated_at.desc(), page)
     people = {u.id: u.name for u in db.execute(select(User)).scalars().all()}
     salespeople = db.execute(
         select(User).where(User.can_create.is_(True)).order_by(User.name)
@@ -245,6 +247,9 @@ def _render_admin_proposals(
             "filters": filters,
             "error": error,
             "user": user,
+            "pagination": pagination,
+            "base_url": "/admin/proposals",
+            "extra_params": {k: v for k, v in filters.items() if v},
         },
         status_code=status_code,
     )
@@ -259,6 +264,7 @@ def list_all_proposals(
     approver_id: str = "",
     date_from: str = "",
     date_to: str = "",
+    page: int = 1,
     db: Session = Depends(get_db),
     user: User = Depends(require_admin),
 ):
@@ -266,7 +272,7 @@ def list_all_proposals(
         "status": status, "client": client, "salesperson_id": salesperson_id,
         "approver_id": approver_id, "date_from": date_from, "date_to": date_to,
     }
-    return _render_admin_proposals(request, db, filters, user)
+    return _render_admin_proposals(request, db, filters, user, page=page)
 
 
 @router.post("/proposals/{proposal_id}/reassign-approver")

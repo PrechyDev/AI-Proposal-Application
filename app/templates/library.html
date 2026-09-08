@@ -11,7 +11,7 @@
   <div class="page">
     <div class="page-header">
       <h1>Reference Library</h1>
-      <span class="count-pill {% if files %}has-items{% endif %}">{{ files|length }}</span>
+      <span class="count-pill {% if files %}has-items{% endif %}">{{ pagination.total_count }}</span>
     </div>
     <p class="gate-note" style="margin-top: -8px; margin-bottom: 20px;">
       Reusable reference files (case studies, rate cards, past work) shared with everyone and available to attach to any proposal.
@@ -99,6 +99,7 @@
       <div class="empty-state">No reference files in the library yet.</div>
       {% endif %}
     </form>
+    {% include "_pagination.html" %}
 
     {% else %}
     {% if files %}
@@ -141,6 +142,7 @@
     {% else %}
     <div class="empty-state">Trash is empty.</div>
     {% endif %}
+    {% include "_pagination.html" %}
     {% endif %}
   </div>
 
