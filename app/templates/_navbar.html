@@ -1,0 +1,25 @@
+<nav class="navbar">
+  <div class="navbar-left">
+    <a href="/dashboard" class="wordmark">Koya Talent</a>
+    <div class="navbar-links">
+      {% if user.can_create %}
+      <a href="/proposals/new" class="nav-link">New Proposal</a>
+      <a href="/library" class="nav-link">Reference Library</a>
+      {% endif %}
+      {% if user.can_create or user.can_approve %}
+      <a href="/proposals" class="nav-link">My Proposals</a>
+      {% endif %}
+      {% if user.is_admin %}
+      <a href="/admin/proposals" class="nav-link">All Proposals</a>
+      <a href="/admin/users" class="nav-link">Manage Users</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="navbar-right">
+    <span class="navbar-user">{{ user.name }}<br>{{ user.email }}</span>
+    <form method="post" action="/logout">
+      <button type="submit" class="btn btn-secondary btn-sm">Log out</button>
+    </form>
+  </div>
+</nav>
+<script src="/static/app.js"></script>

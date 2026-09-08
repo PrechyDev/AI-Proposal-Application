@@ -5,14 +5,16 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.staticfiles import StaticFiles
 
 from app.auth import require_user
 from app.config import get_settings
 from app.db import engine, get_db
 from app.models import DeliveryLog, Proposal, User
+from app.models.proposal import PROPOSAL_STATUSES
 from app.routers.admin import router as admin_router
 from app.routers.approvals import router as approvals_router
 from app.routers.auth import router as auth_router
@@ -32,6 +34,14 @@ logger = logging.getLogger(__name__)
 NUDGE_THRESHOLD = timedelta(days=7)
 settings = get_settings()
 
+STATUS_LABELS = {
+    "draft": "Draft",
+    "pending_approval": "Pending Approval",
+    "changes_requested": "Changes Requested",
+    "approved": "Approved",
+    "sent": "Sent",
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Proposal Application", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, same_site="lax")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(proposals_router)
@@ -117,6 +128,52 @@ def _get_nudge_candidates(user: User, db: Session) -> list[dict]:
     return candidates
 
 
+def _my_proposals_filter(user: User):
+    """Same scoping as GET /proposals (spec section 4/5): a person's own
+    proposals are whatever they created or are the assigned approver for -
+    reused here so the dashboard's stats/recent-proposals view and the
+    full /proposals list never disagree about what counts as "mine"."""
+    return or_(Proposal.created_by == user.id, Proposal.approver_id == user.id)
+
+
+def _get_dashboard_stats(user: User, db: Session) -> dict:
+    rows = db.execute(
+        select(Proposal.status, func.count(Proposal.id))
+        .where(_my_proposals_filter(user))
+        .group_by(Proposal.status)
+    ).all()
+    by_status = {status_value: 0 for status_value in PROPOSAL_STATUSES}
+    total = 0
+    for status_value, count in rows:
+        by_status[status_value] = count
+        total += count
+    return {"total": total, "by_status": by_status}
+
+
+def _get_recent_proposals(user: User, db: Session, limit: int = 6) -> list[Proposal]:
+    return db.execute(
+        select(Proposal)
+        .where(_my_proposals_filter(user))
+        .order_by(Proposal.updated_at.desc())
+        .limit(limit)
+    ).scalars().all()
+
+
+def _get_highest_role(user: User) -> tuple[str, str]:
+    """Collapses the 3 independent capability flags into a single
+    at-a-glance label - the highest-privilege one, in that order - per the
+    user's own request to show one role line rather than every badge that
+    applies. The nav links and page-level access control still check the
+    real flags individually; this is purely a display simplification."""
+    if user.is_admin:
+        return "Admin", "badge-admin"
+    if user.can_approve:
+        return "Approver", "badge-approver"
+    if user.can_create:
+        return "Salesperson", "badge-sales"
+    return "Member", "badge-approver"
+
+
 @app.get("/dashboard")
 def dashboard(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
     pending_approvals = []
@@ -131,8 +188,19 @@ def dashboard(request: Request, user: User = Depends(require_user), db: Session 
     if user.can_create:
         nudge_candidates = _get_nudge_candidates(user, db)
 
+    role_label, role_badge_class = _get_highest_role(user)
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"user": user, "pending_approvals": pending_approvals, "nudge_candidates": nudge_candidates},
+        context={
+            "user": user,
+            "pending_approvals": pending_approvals,
+            "nudge_candidates": nudge_candidates,
+            "stats": _get_dashboard_stats(user, db),
+            "recent_proposals": _get_recent_proposals(user, db),
+            "status_labels": STATUS_LABELS,
+            "role_label": role_label,
+            "role_badge_class": role_badge_class,
+        },
     )

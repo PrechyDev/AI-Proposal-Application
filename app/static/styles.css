@@ -1,0 +1,581 @@
+/* Koya Talent design system (see proposal_app_spec.md §2b) - same palette
+   and typography chosen for the transactional emails, now shared across
+   the app's own pages. Rolling out page by page, starting with login. */
+
+:root {
+  --color-primary: #1F2D3D;
+  --color-accent: #B8863B;
+  --color-accent-hover: #a3762f;
+  --color-text: #3A4655;
+  --color-muted: #6B7280;
+  --color-bg: #F7F5F2;
+  --color-surface: #FFFFFF;
+  --color-border: #E5E1DA;
+  --color-danger: #B3261E;
+  --color-danger-bg: #FBEAEA;
+  --color-success: #3F7D5C;
+  --color-success-bg: #EAF3EE;
+
+  --font-heading: Georgia, 'Times New Roman', serif;
+  --font-body: Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+a {
+  color: var(--color-accent-hover);
+}
+
+.wordmark {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.page-center {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background-color: var(--color-surface);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(31, 45, 61, 0.08);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 28px 32px 20px 32px;
+  border-bottom: 3px solid var(--color-accent);
+}
+
+.card-body {
+  padding: 28px 32px 32px 32px;
+}
+
+.card-body h1 {
+  margin: 0 0 20px 0;
+  font-family: var(--font-heading);
+  font-size: 20px;
+  color: var(--color-primary);
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--color-primary);
+}
+
+.field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--color-text);
+  background-color: var(--color-surface);
+}
+
+.field input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+
+.password-wrapper {
+  position: relative;
+}
+
+.password-wrapper input {
+  padding-right: 42px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0 8px;
+  margin: 0;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  color: var(--color-primary);
+}
+
+.password-toggle svg {
+  display: block;
+}
+
+.password-toggle .icon-eye-off {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye-off {
+  display: block;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: var(--color-accent);
+  color: #FFFFFF;
+  border: none;
+  text-decoration: none;
+  text-align: center;
+  padding: 11px 22px;
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-weight: bold;
+  font-size: 15px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background-color: var(--color-accent-hover);
+  color: #FFFFFF;
+}
+
+.btn:disabled {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  background-color: var(--color-accent);
+}
+
+.btn-block {
+  display: flex;
+  width: 100%;
+}
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-bg);
+  color: var(--color-primary);
+}
+
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #FFFFFF;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.error-message {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+/* --- Navigation progress bar (app.js) --- */
+
+#nav-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background-color: var(--color-accent);
+  z-index: 9999;
+  opacity: 0;
+  transition: width 4s cubic-bezier(0.1, 0.7, 0.2, 1), opacity 0.2s ease 0s;
+}
+
+html.is-navigating #nav-progress-bar {
+  width: 80%;
+  opacity: 1;
+  transition: width 4s cubic-bezier(0.1, 0.7, 0.2, 1), opacity 0.2s ease 0s;
+}
+
+/* --- Navbar (shared across authenticated pages) --- */
+
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 14px 32px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+
+.navbar-links {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.nav-link {
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  color: var(--color-accent-hover);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.navbar-user {
+  font-size: 13px;
+  color: var(--color-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.navbar form {
+  margin: 0;
+}
+
+/* --- Page shell for content below the navbar --- */
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px 64px 24px;
+}
+
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.page-header h1 {
+  font-family: var(--font-heading);
+  color: var(--color-primary);
+  font-size: 26px;
+  margin: 0;
+}
+
+.role-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.badge-admin {
+  background-color: var(--color-primary);
+  color: #FFFFFF;
+}
+
+.badge-approver {
+  background-color: #FFFFFF;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.badge-sales {
+  background-color: var(--color-accent);
+  color: #FFFFFF;
+}
+
+/* --- Dashboard sections --- */
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 36px;
+}
+
+.section {
+  margin-bottom: 36px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.section-header h2 {
+  font-family: var(--font-heading);
+  color: var(--color-primary);
+  font-size: 18px;
+  margin: 0;
+}
+
+.count-pill {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.count-pill.has-items {
+  background-color: var(--color-accent);
+  color: #FFFFFF;
+  border-color: var(--color-accent);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 14px 18px;
+}
+
+.list-item-main {
+  min-width: 0;
+}
+
+.list-item-title {
+  font-weight: bold;
+  color: var(--color-primary);
+  text-decoration: none;
+  display: block;
+}
+
+.list-item-title:hover {
+  color: var(--color-accent-hover);
+}
+
+.list-item-meta {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.empty-state {
+  background-color: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  padding: 18px;
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+/* --- Stat cards (real proposal counts) --- */
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 36px;
+}
+
+.stat-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  text-align: left;
+}
+
+.stat-card .stat-number {
+  font-family: var(--font-heading);
+  font-size: 28px;
+  font-weight: bold;
+  color: var(--color-primary);
+  line-height: 1.1;
+}
+
+.stat-card .stat-label {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: 4px;
+}
+
+.stat-card.stat-total {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.stat-card.stat-total .stat-number,
+.stat-card.stat-total .stat-label {
+  color: #FFFFFF;
+}
+
+/* --- Status pills (proposal status, semantic per state) --- */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.status-draft {
+  background-color: var(--color-bg);
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+}
+
+.status-pending_approval {
+  background-color: var(--color-accent);
+  color: #FFFFFF;
+}
+
+.status-changes_requested {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.status-approved {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.status-sent {
+  background-color: var(--color-primary);
+  color: #FFFFFF;
+}
+
+/* --- Recent proposals table --- */
+
+.proposal-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.proposal-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-muted);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.proposal-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.proposal-table tr:last-child td {
+  border-bottom: none;
+}
+
+.proposal-table a {
+  color: var(--color-primary);
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.proposal-table a:hover {
+  color: var(--color-accent-hover);
+}
+
+.proposal-table .cell-meta {
+  color: var(--color-muted);
+  font-size: 13px;
+}

@@ -124,6 +124,7 @@ Already seeded in the dev DB (all password `test-password-123`):
 | `sales@test.local` | can_create |
 | `approver@test.local` | can_approve |
 | `approver2@test.local` | can_approve (added in step 9, specifically to test "a can_approve user who isn't the assigned approver gets 403") |
+| `approver.creator@test.local` | can_create, can_approve, not admin (added post-step-16, specifically to have a real "approver who can also create" test account for the dashboard redesign - no existing user had exactly this combination) |
 | `nonadmin@test.local` | deactivated (for testing the deactivated-login-blocked case) |
 | `preciousrobinsonokafor@gmail.com` (id 7) | can_approve - the user's own real email, used to verify real sends throughout steps 9-13 while Resend was the provider, and again post-step-14 for all three real Brevo flows (see `PROGRESS.md`'s post-step-14 follow-up) - confirmed working as a `to`/`cc` recipient under Brevo, no further setup needed. |
 

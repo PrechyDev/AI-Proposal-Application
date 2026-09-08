@@ -2,54 +2,128 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Dashboard — AI Proposal Application</title>
+  <title>Dashboard — Koya Talent</title>
+  <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <h1>Welcome, {{ user.name }}</h1>
-  <ul>
-    <li>Email: {{ user.email }}</li>
-    <li>Can create proposals: {{ user.can_create }}</li>
-    <li>Can approve proposals: {{ user.can_approve }}</li>
-    <li>Admin: {{ user.is_admin }}</li>
-  </ul>
-  {% if user.can_create %}
-  <p><a href="/proposals/new">New proposal</a></p>
-  <p><a href="/library">Reference library</a></p>
-  {% endif %}
-  {% if user.can_create or user.can_approve %}
-  <p><a href="/proposals">My proposals</a></p>
-  {% endif %}
-  {% if user.is_admin %}
-  <p><a href="/admin/users">Manage users</a></p>
-  <p><a href="/admin/proposals">All proposals</a></p>
-  {% endif %}
+  {% include "_navbar.html" %}
 
-  {% if user.can_approve %}
-  <h2>Pending Your Approval ({{ pending_approvals|length }})</h2>
-  {% if pending_approvals %}
-  <ul>
-    {% for p in pending_approvals %}
-    <li><a href="/proposals/{{ p.id }}/approve">{{ p.client_name }} ({{ p.company_name }})</a></li>
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p><em>Nothing waiting on you right now.</em></p>
-  {% endif %}
-  {% endif %}
+  <div class="page">
+    <div class="page-header">
+      <h1>Welcome, {{ user.name }}</h1>
+    </div>
+    <div class="role-badges">
+      <span class="badge {{ role_badge_class }}">{{ role_label }}</span>
+    </div>
 
-  {% if user.can_create and nudge_candidates %}
-  <h2>Needs a Nudge ({{ nudge_candidates|length }})</h2>
-  <p><em>Sent to the client but not opened yet.</em></p>
-  <ul>
-    {% for item in nudge_candidates %}
-    <li><a href="/proposals/{{ item.proposal.id }}">{{ item.proposal.client_name }} ({{ item.proposal.company_name }})</a>
-      &mdash; unopened for {{ item.days_unopened }} day{{ 's' if item.days_unopened != 1 else '' }}</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
+    {% if user.can_create %}
+    <div class="quick-actions">
+      <a href="/proposals/new" class="btn">New Proposal</a>
+      <a href="/library" class="btn btn-secondary">Reference Library</a>
+      <a href="/proposals" class="btn btn-secondary">My Proposals</a>
+    </div>
+    {% elif user.can_approve %}
+    <div class="quick-actions">
+      <a href="/proposals" class="btn btn-secondary">My Proposals</a>
+    </div>
+    {% endif %}
 
-  <form method="post" action="/logout">
-    <button type="submit">Log out</button>
-  </form>
+    <div class="stats-row">
+      <div class="stat-card stat-total">
+        <div class="stat-number">{{ stats.total }}</div>
+        <div class="stat-label">Total</div>
+      </div>
+      {% for key, label in status_labels.items() %}
+      <div class="stat-card">
+        <div class="stat-number">{{ stats.by_status.get(key, 0) }}</div>
+        <div class="stat-label">{{ label }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if user.can_approve %}
+    <div class="section">
+      <div class="section-header">
+        <h2>Pending Your Approval</h2>
+        <span class="count-pill {% if pending_approvals %}has-items{% endif %}">{{ pending_approvals|length }}</span>
+      </div>
+      {% if pending_approvals %}
+      <div class="list">
+        {% for p in pending_approvals %}
+        <div class="list-item">
+          <div class="list-item-main">
+            <a href="/proposals/{{ p.id }}/approve" class="list-item-title">{{ p.client_name }} ({{ p.company_name }})</a>
+            <div class="list-item-meta">Submitted {{ p.updated_at.strftime('%Y-%m-%d') }}</div>
+          </div>
+          <a href="/proposals/{{ p.id }}/approve" class="btn btn-sm">Review</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state">Nothing waiting on your approval right now.</div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if user.can_create and nudge_candidates %}
+    <div class="section">
+      <div class="section-header">
+        <h2>Needs a Nudge</h2>
+        <span class="count-pill has-items">{{ nudge_candidates|length }}</span>
+      </div>
+      <p class="list-item-meta" style="margin-top: -6px;">Sent to the client but not opened yet.</p>
+      <div class="list">
+        {% for item in nudge_candidates %}
+        <div class="list-item">
+          <div class="list-item-main">
+            <a href="/proposals/{{ item.proposal.id }}" class="list-item-title">{{ item.proposal.client_name }} ({{ item.proposal.company_name }})</a>
+            <div class="list-item-meta">Unopened for {{ item.days_unopened }} day{{ 's' if item.days_unopened != 1 else '' }}</div>
+          </div>
+          <a href="/proposals/{{ item.proposal.id }}" class="btn btn-sm btn-secondary">View</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="section">
+      <div class="section-header">
+        <h2>Recent Proposals</h2>
+        <span class="count-pill {% if recent_proposals %}has-items{% endif %}">{{ recent_proposals|length }}</span>
+      </div>
+      {% if recent_proposals %}
+      <div style="overflow-x: auto;">
+        <table class="proposal-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Status</th>
+              <th>Last Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in recent_proposals %}
+            <tr>
+              <td><a href="/proposals/{{ p.id }}">{{ p.client_name }}</a><div class="cell-meta">{{ p.company_name }}</div></td>
+              <td><span class="status-pill status-{{ p.status }}">{{ status_labels.get(p.status, p.status) }}</span></td>
+              <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+              <td><a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">No proposals yet.</div>
+      {% endif %}
+    </div>
+
+    {% if not user.can_create and not user.can_approve %}
+    <div class="empty-state">
+      Your account doesn't have proposal-creation or approval access yet. Contact an admin if you think this is a mistake.
+    </div>
+    {% endif %}
+  </div>
 </body>
 </html>
