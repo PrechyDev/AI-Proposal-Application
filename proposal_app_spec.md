@@ -156,7 +156,7 @@ Dashboard visibility is a query filter, not a separate permission table: salespe
 5. On approve: snapshot frozen, client token generated, client email sent.
 
 **Admin**
-1. Creates/deactivates users, assigns `can_create`/`can_approve`.
+1. Invites users by email and assigns `can_create`/`can_approve` up front (§6a) — no password is set by the admin; deactivates users the same way as before.
 2. Manages the reference library (tag, retire stale files).
 3. Views all proposals with filters — status, client, salesperson, approver, date range.
 
@@ -165,6 +165,20 @@ Dashboard visibility is a query filter, not a separate permission table: salespe
 2. Sees the proposal rendered read-only, with a Download PDF button that exports the exact same view.
 3. Cannot navigate anywhere else in the app — any bad/expired token redirects to the business homepage, never to an internal page or error revealing the app's existence.
 4. Their view is logged (timestamp, IP) — this is what triggers the salesperson's 7-day nudge if it never happens.
+
+### 6a. Invite-Based User Creation and Forgot-Password
+
+**Status: implemented post-step-16.** The original admin flow had the admin set a new user's password directly. Changed to a GitHub-style invite instead, per direct request: the admin only supplies an email and permissions; the user gets emailed a link to set their own password. A matching forgot-password flow was added at the same time, since one implies the need for the other.
+
+**Two flows, two different secret shapes, deliberately:**
+- **Invite**: a long, high-entropy link (`/accept-invite/{token}`), valid 7 days. Nothing to guess, so no separate rate-limiting is needed - the link's own entropy is the security.
+- **Forgot password**: a short 6-digit code, valid 15 minutes, sent alongside a link to the reset-password page (not straight to a pre-filled action) - explicitly requested as "a code," not another link to click. A 6-digit code doesn't carry enough entropy on its own, so it's backed by a 5-attempt lockout and short expiry instead.
+
+Both share one `account_tokens` table (`purpose`: `invite` or `reset`) - same shape (a hashed secret, an expiry, a used-at, an attempt counter), just issued/validated differently per purpose. Only a hash of the secret is ever stored, same principle as password storage.
+
+**Forgot-password is for someone who already has a password and forgot it - not a substitute for a lost invite.** A user with no password yet (`password_hash IS NULL`) can't use forgot-password; only an admin can resend their invite. Two different account states, two different recovery paths, not one flow trying to cover both.
+
+**No self-serve account creation.** Both flows require an admin (or, for reset, an existing account) to already exist - there's still no public "sign up" page, matching this app's original invite-only user model (§10's role-based access decisions).
 
 ---
 
@@ -278,6 +292,8 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 Domain authentication is still worth doing on Brevo eventually for deliverability (fewer spam-folder landings, especially at Gmail/Yahoo/Microsoft) — but unlike Resend, it's an optimization to do later, not a blocker to get real sending working today.
 
 **Backup path added post-step-16: Gmail SMTP.** `send_email()` tries Brevo first, and only falls back to a personal Gmail account (SMTP, app password) if Brevo is unconfigured or a real send attempt to it fails (e.g. the account gets suspended) — only raising an error if both fail. This is a backup, not an equal alternative: Gmail's SMTP relay can only send *as* the authenticated Gmail address itself (no domain delegation), so a fallback send shows that personal address as the sender rather than the central `EMAIL_FROM_ADDRESS`. `cc`/`reply_to` still work identically either way.
+
+**Manual override: `USE_BREVO=false`.** Skips Brevo entirely — not even checking whether its credentials are present — and always uses Gmail, without needing to remove real Brevo credentials from `.env` to force that (e.g. during a known Brevo outage). Defaults to `true`, matching the original try-Brevo-first behavior when unset.
 
 ### 8d. Email Architecture: Central Inbox, CC/Reply-To, and Why Each of the Three Flows Exists
 

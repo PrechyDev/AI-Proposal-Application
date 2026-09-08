@@ -42,11 +42,20 @@ def send_email(
     as the sender, not the central Brevo one, since Gmail's SMTP relay
     won't send "as" an unrelated address without domain delegation this
     app doesn't have.
+
+    `USE_BREVO=false` skips Brevo entirely - not even checking whether its
+    credentials are present - and goes straight to Gmail. A manual override
+    for forcing Gmail (e.g. during a known Brevo outage) without having to
+    remove real credentials from `.env` to do it.
     """
     settings = get_settings()
-    brevo_configured = bool(settings.brevo_api_key and settings.email_from_address)
+    brevo_configured = (
+        settings.use_brevo and bool(settings.brevo_api_key and settings.email_from_address)
+    )
 
-    if brevo_configured:
+    if not settings.use_brevo:
+        logger.info("USE_BREVO=false, skipping Brevo entirely and using Gmail for this send.")
+    elif brevo_configured:
         try:
             _send_via_brevo(to, subject, html, cc, reply_to)
             return

@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # is down" edge case) rather than nothing working at all. A fresh dev
     # environment shouldn't be unable to start just because no email
     # provider has been configured yet.
+    # Manual override: set USE_BREVO=false to skip Brevo entirely (not even
+    # checking whether its credentials are present) and go straight to the
+    # Gmail fallback - e.g. to force Gmail during a known Brevo outage,
+    # without having to remove real credentials from .env to do it.
+    use_brevo: bool = Field(default=True, validation_alias="USE_BREVO")
     brevo_api_key: str | None = Field(default=None, validation_alias="BREVO_API_KEY")
     email_from_address: str | None = Field(default=None, validation_alias="EMAIL_FROM_ADDRESS")
     email_from_name: str = Field(default="Koya Talent", validation_alias="EMAIL_FROM_NAME")
