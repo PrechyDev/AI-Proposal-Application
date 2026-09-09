@@ -507,6 +507,19 @@ def _get_whole_doc_comments(proposal: Proposal, db: Session) -> list[ApprovalCom
     ).scalars().all()
 
 
+def _compute_unresolved_flags(
+    section_views: list[dict], whole_doc_comments: list[ApprovalComment]
+) -> tuple[bool, bool]:
+    """Shared by _render_workspace and _render_section_fragment so the two
+    can never drift - both feed the same Review Decision card (directly, or
+    via the out-of-band swap in _section_fragment.html)."""
+    has_unresolved_gap = any(v["section"].has_gap_marker for v in section_views)
+    has_unresolved_comments = bool(
+        [c for c in whole_doc_comments if not c.resolved]
+    ) or any(v["unresolved_comments"] for v in section_views)
+    return has_unresolved_gap, has_unresolved_comments
+
+
 def _regen_guard(
     request: Request, db: Session, proposal: Proposal, user: User, section_key: str | None = None
 ):
@@ -568,10 +581,7 @@ def _render_workspace(
     section_views = _build_section_views(db, proposal)
     delivery_logs = _get_delivery_logs(proposal, db)
     whole_doc_comments = _get_whole_doc_comments(proposal, db)
-    has_unresolved_gap = any(v["section"].has_gap_marker for v in section_views)
-    has_unresolved_comments = bool(
-        [c for c in whole_doc_comments if not c.resolved]
-    ) or any(v["unresolved_comments"] for v in section_views)
+    has_unresolved_gap, has_unresolved_comments = _compute_unresolved_flags(section_views, whole_doc_comments)
     # Once approved/sent, the proposal is finalized - the review UI (inline
     # comments, per-section edit/regenerate, Raw Inputs) disappears in favor
     # of a clean read-only view with just Send to Client / Reopen for
@@ -1213,6 +1223,8 @@ def _render_section_fragment(
     can_edit, can_review = get_role_flags(proposal, user)
     views = _build_section_views(db, proposal)
     view = next(v for v in views if v["section"].section_key == section_key)
+    whole_doc_comments = _get_whole_doc_comments(proposal, db)
+    has_unresolved_gap, has_unresolved_comments = _compute_unresolved_flags(views, whole_doc_comments)
     return templates.TemplateResponse(
         request=request,
         name="_section_fragment.html",
@@ -1225,6 +1237,10 @@ def _render_section_fragment(
             "section_error": section_error,
             "pending_overwrite": pending_overwrite,
             "pending_comment": pending_comment,
+            # Feeds the out-of-band Review Decision swap at the bottom of
+            # _section_fragment.html - this action may have changed either.
+            "has_unresolved_gap": has_unresolved_gap,
+            "has_unresolved_comments": has_unresolved_comments,
         },
     )
 

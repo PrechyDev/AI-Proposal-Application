@@ -330,32 +330,9 @@
       <p class="gate-note">Awaiting approval.</p>
       {% endif %}
 
-      {% if can_review and proposal.status == "pending_approval" %}
-      <div class="section-card">
-        <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Review Decision</h3>
-        {% if has_unresolved_gap %}
-        <p class="gate-note">Every section must have its gap marker resolved before this proposal can be approved.</p>
-        {% endif %}
-        <div class="quick-actions">
-          <form method="post" action="/proposals/{{ proposal.id }}/approve">
-            <button type="submit" class="btn" data-loading-text="Approving…" {% if has_unresolved_gap or has_unresolved_comments %}disabled title="Resolve unresolved comments and gaps first"{% endif %}>
-              <span class="spinner" hidden></span>
-              <span data-btn-text>Approve</span>
-            </button>
-          </form>
-          <form method="post" action="/proposals/{{ proposal.id }}/request-changes">
-            <button type="submit" class="btn btn-secondary" {% if not has_unresolved_comments %}disabled title="Add at least one comment first"{% endif %}>
-              Request Changes
-            </button>
-          </form>
-        </div>
-        {% if has_unresolved_comments %}
-        <p class="gate-note">This proposal has unresolved comments - resolve them or request changes.</p>
-        {% else %}
-        <p class="gate-note">No unresolved comments - add one to request changes, or approve as-is.</p>
-        {% endif %}
+      <div id="review-decision">
+        {% include "_review_decision_body.html" %}
       </div>
-      {% endif %}
 
       {% if delivery_logs %}
       <details class="section-edit-toggle">

@@ -118,3 +118,12 @@
     {% endfor %}
   </details>
 </div>
+
+{# Out-of-band swap: a section action (comment, edit, regenerate) can change
+   whether the proposal has unresolved comments/gaps, but this fragment only
+   replaces the one section's own #section-{key} element - without this,
+   the separate Review Decision card (Approve/Request Changes) would keep
+   showing stale disabled-state and copy until a full page reload. #}
+<div id="review-decision" hx-swap-oob="true">
+  {% include "_review_decision_body.html" %}
+</div>
