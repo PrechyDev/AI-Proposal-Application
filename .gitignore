@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Internal build tracker - never committed, kept locally only
+PROGRESS.md
