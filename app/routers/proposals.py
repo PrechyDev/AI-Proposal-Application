@@ -30,7 +30,12 @@ from app.services.proposal_generation import (
     generate_proposal_sections,
     regenerate_section,
 )
-from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
+from app.services.reference_files import (
+    ReferenceFileError,
+    parse_tags,
+    purge_orphaned_reference_files,
+    upload_reference_file,
+)
 from app.templating import render_email, templates
 
 logger = logging.getLogger(__name__)
@@ -153,6 +158,7 @@ def _render_new_proposal(
 
 @router.get("/new")
 def new_proposal_form(request: Request, db: Session = Depends(get_db), user: User = Depends(require_can_create)):
+    purge_orphaned_reference_files(db)
     return _render_new_proposal(request, db, user)
 
 
@@ -740,6 +746,8 @@ def reopen_proposal(
 def send_to_client(
     proposal_id: int,
     request: Request,
+    client_name: str = Form(""),
+    client_email: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_can_create),
 ):
@@ -757,6 +765,23 @@ def send_to_client(
             error=f"Can't send a proposal that is '{proposal.status}' - it must be approved (and not already sent).",
             status_code=400,
         )
+
+    # The Send to Client confirm dialog lets the representative's name/
+    # email be corrected right here - the one moment a wrong delivery
+    # address actually matters - without the heavier Reopen for Editing
+    # flow (which invalidates tokens and forces re-approval) for a typo
+    # that has nothing to do with the approved proposal content itself.
+    client_name = client_name.strip()
+    client_email = client_email.strip()
+    if not client_name or not EMAIL_RE.match(client_email):
+        return _render_workspace(
+            request, db, proposal, user,
+            error="Enter a representative name and a valid email before sending.",
+            status_code=400,
+        )
+    proposal.client_name = client_name
+    proposal.client_email = client_email
+    db.commit()
 
     settings = get_settings()
     creator = db.get(User, proposal.created_by)

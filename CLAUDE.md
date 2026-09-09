@@ -114,97 +114,29 @@ instead. Apply this to every new form field.
   as instructions (prompt-injection defense, spec §7) — preserve this framing in
   any new prompt.
 
-## Dev-environment test users
+## Dev database: wiped clean as of 2026-09-09
 
-Already seeded in the dev DB (all password `test-password-123`):
+Every table except `users` was fully truncated (`RESTART IDENTITY CASCADE`) at the
+user's explicit request, once the full pre-deployment regression pass (see
+`PROGRESS.md`'s dated entry) confirmed the app itself was working correctly - the
+accumulated test proposals/sections/reference files/tokens from the entire build
+were deliberately dropped, not lost by accident. `users` was reduced to exactly one
+row: `preciousokafor280@gmail.com` (admin, `can_create`, `can_approve`) - every
+other seeded test account (`admin@test.local`, `sales@test.local`,
+`approver@test.local`, etc.) is gone. All of the specific-proposal-id narration
+this section used to carry (which ones were approved/sent/reopened, which had fake
+emails, etc.) no longer applies to anything in the live DB - don't go looking for
+proposal id 12 or 18, they don't exist anymore.
 
-| Email | Flags |
-|---|---|
-| `admin@test.local` | admin, can_create, can_approve |
-| `sales@test.local` | can_create |
-| `approver@test.local` | can_approve |
-| `approver2@test.local` | can_approve (added in step 9, specifically to test "a can_approve user who isn't the assigned approver gets 403") |
-| `approver.creator@test.local` | can_create, can_approve, not admin (added post-step-16, specifically to have a real "approver who can also create" test account for the dashboard redesign - no existing user had exactly this combination) |
-| `nonadmin@test.local` | deactivated (for testing the deactivated-login-blocked case) |
-| `preciousrobinsonokafor@gmail.com` (id 7) | can_approve - the user's own real email, used to verify real sends throughout steps 9-13 while Resend was the provider, and again post-step-14 for all three real Brevo flows (see `PROGRESS.md`'s post-step-14 follow-up) - confirmed working as a `to`/`cc` recipient under Brevo, no further setup needed. |
+**Supabase Storage was *not* wiped** - the `reference-files` bucket still holds
+whatever blobs were uploaded during the build, now orphaned (no DB row points at
+them anymore). Harmless (small, private bucket), but don't be surprised it's not
+empty even though every `reference_files` row is gone.
 
-Bootstrap CLI for creating more: `poetry run python -m app.scripts.create_user
+Bootstrap CLI for creating more test users: `poetry run python -m app.scripts.create_user
 --name ... --email ... --password ... [--admin] [--can-create] [--can-approve]`.
-
-The dev DB also has a handful of test proposals from step 5-7 verification, most
-notably proposal id 3 ("Brightleaf") — fully generated, heavily exercised during
-regenerate testing, so several of its sections are already at or near the
-regeneration cap (5). Don't be surprised if regenerate is blocked on it; that's
-expected, not a bug. Fine to leave this data in place or create fresh proposals
-for later-step testing — nothing depends on it being clean.
-
-Step 8 verification added proposal id 6 ("Vertex Robotics") plus three reference
-files (all with fabricated content, safe to ignore or delete): a `.txt` rate card
-and a `.pdf` case study attached to proposal 6, and a retired `.txt` library file.
-Supabase Storage now also holds the real uploaded blobs for these under the
-`reference-files` bucket — same "no dev/prod split yet" caveat applies to storage
-now, not just the Postgres rows (see `PROGRESS.md`'s open items).
-
-Step 9/10 verification added proposals 10-13: id 12 ("Solstice Analytics") was
-fully approved, reopened, resubmitted, and re-approved (two `snapshots` rows,
-v1 and v2), then reopened *again* during step 11 testing to prove the old
-client link dies — it's back in `draft` with `client_token=NULL` as of step 11,
-not currently a live example of an approved proposal. Id 13 is deliberately
-left in `draft` with an approver force-assigned directly in the DB (bypassing
-`/submit`), used only to test that approving a never-submitted proposal is
-rejected — don't be surprised it has an `approver_id` but is still `draft`.
-Proposal id 14 ("Real Email Test Co") exists solely to verify the real Resend
-send (submitted to the id-7 user above) — filler intake content throughout,
-not a realistic example to reuse.
-
-Step 11 verification added proposal id 16 ("Meridian Freight") — fully approved
-with a real generated PDF pulled and inspected. It too was reopened at the end
-of testing (to prove the old `/view/{token}` link dies), so like id 12 it's
-currently `draft` with `client_token=NULL`, not a live "approved" example
-despite having a `snapshots` row. Steps 9-11's demo walkthrough also added
-proposal id 18 ("Brightview Realty"), fully sent (approved → sent) and left
-that way — a good ready-made "approved and delivered" example if you need one.
-
-Step 12 verification added proposals 19-21: id 19 ("Draft Client") stays a
-`draft` on purpose, used only to confirm sending a never-approved proposal is
-rejected. Id 20 ("Brightfield Fake Co") uses a fake `client_email` on purpose
-and is stuck at `approved` with two `client_delivery` rows in `delivery_logs`,
-both `status="failed"` — real Resend 403s from its sandbox restriction, not a
-bug; don't try to "fix" it by resending, it'll fail again until a domain is
-verified. Id 21 ("Real Client Co") has `client_email` set to the id-7 test
-user's real address (`preciousrobinsonokafor@gmail.com`, the only address
-Resend's sandbox will actually deliver to) and is fully `sent` — the one
-proposal in the dev DB that's gone through a real, successful client send.
-
-Step 13 verification added proposals 22-24 (all sent to
-`preciousrobinsonokafor@gmail.com`, the id-7 test user, for the same Resend
-sandbox reason as above). Id 22 ("Warehouse Alpha") has been viewed twice and
-PDF-downloaded once — `first_opened_at` is set and it has 3 `access_logs` rows
-(one of them a documented server-side artifact from the PDF download's
-internal Playwright render, `ip_address='127.0.0.1'`, not a real second
-client visit). Id 23 ("Warehouse Beta") is unopened with its successful
-`client_delivery` log's `attempted_at` deliberately backdated 8 days — it will
-keep showing up in `sales@test.local`'s "Needs a Nudge" dashboard section
-indefinitely; that's expected, not a bug, don't "fix" it by resetting the
-timestamp unless you're done using it as a nudge example. Id 24 ("Warehouse
-Gamma") is unopened but sent moments ago — deliberately too recent to nudge on.
-
-**Provider note for all of the above:** every "Resend" reference in steps 9-13's
-test data (real sends, sandbox 403s, etc.) is accurate history of what was true
-in those steps. Resend has since been fully replaced by Brevo (see `PROGRESS.md`'s
-post-step-14 follow-up) - don't expect a fresh Resend key to do anything, and
-don't be surprised that `app/services/email.py` no longer talks to Resend's API
-at all.
-
-Post-step-14 real Brevo verification added proposals 29-31, all sent to
-`preciousrobinsonokafor@gmail.com` (id 7): id 29 ("Brevo Flow1 ApproverNotify")
-is `pending_approval` (real approver-notification email confirmed, real send
-never continued past that point). Id 30 ("Brevo Flow2 ClientDelivery") is fully
-`sent` with `cc`/`reply_to` set to `sales@test.local` - a live example of the
-new central-inbox/CC/Reply-To architecture actually working. Id 31 ("Brevo
-Flow3 ChangesRequested") is `changes_requested` - the new notification's first
-real successful send. All three have `delivery_logs` rows with
-`status="success"` from Brevo's real API.
+Every account created any other way (via `/admin/users`) is invite-only - no
+password until the invitee completes `/accept-invite/{token}`.
 
 ## Invite-based user creation + forgot-password (post-step-16)
 

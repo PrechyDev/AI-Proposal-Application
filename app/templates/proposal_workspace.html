@@ -13,30 +13,65 @@
     <div class="page-header">
       <h1>{{ proposal.company_name }} ({{ proposal.client_name }})</h1>
       <span class="status-pill status-{{ proposal.status }}">{{ proposal.status.replace('_', ' ')|title }}</span>
+    </div>
+
+    <div class="client-details-line">
+      <span><strong>Client/Company:</strong> {{ proposal.company_name }}</span>
+      <span><strong>Representative:</strong> {{ proposal.client_name }}</span>
+      <span><strong>Representative Email:</strong> {{ proposal.client_email }}</span>
+    </div>
+
+    {% if is_finalized %}
+    <div class="quick-actions" style="margin-bottom: 24px;">
+      {% if can_edit %}
+        {% if proposal.status == "sent" %}
+        <button type="button" class="btn" disabled title="Already sent to the client">Sent to Client</button>
+        {% else %}
+        <button type="button" class="btn" id="open-send-confirm-modal">
+          {% if has_send_attempt %}Retry Send to Client{% else %}Send to Client{% endif %}
+        </button>
+        {% endif %}
+      {% endif %}
       {% if client_view_url %}
-      <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('{{ client_view_url }}'); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy Client Link', 1500);">
+      <button type="button" class="btn btn-secondary" onclick="navigator.clipboard.writeText('{{ client_view_url }}'); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy Client Link', 1500);">
         Copy Client Link
       </button>
       {% endif %}
-    </div>
-
-    {% if can_edit and is_finalized %}
-    <div class="quick-actions" style="margin-bottom: 24px;">
-      {% if proposal.status == "sent" %}
-      <button type="button" class="btn" disabled title="Already sent to the client">Sent to Client</button>
-      {% else %}
-      <form method="post" action="/proposals/{{ proposal.id }}/send" id="send-to-client-form">
-        <button type="submit" class="btn" data-loading-text="Sending…">
-          <span class="spinner" hidden></span>
-          <span data-btn-text>{% if has_send_attempt %}Retry Send to Client{% else %}Send to Client{% endif %}</span>
-        </button>
-      </form>
-      {% endif %}
+      {% if can_edit %}
       <form method="post" action="/proposals/{{ proposal.id }}/reopen"
             onsubmit="return confirm('{% if proposal.status == 'sent' %}Reopen for editing? This will invalidate the client link that was already sent, and a new one will be sent once re-approved.{% else %}Reopen for editing? Any copied client link will stop working, and a new one will be issued once re-approved.{% endif %}');">
-        <button type="submit" class="btn btn-secondary">Reopen for Editing</button>
+        <button type="submit" class="btn {% if proposal.status != 'sent' %}btn-secondary{% endif %}">Reopen for Editing</button>
       </form>
+      {% endif %}
     </div>
+
+    {% if can_edit and proposal.status == "approved" %}
+    <dialog id="send-confirm-modal" class="send-confirm-modal">
+      <h3>Confirm Delivery Details</h3>
+      <p>Double-check who this is going to before it sends - this is the last point where a typo here is easy to fix.</p>
+      <form method="post" action="/proposals/{{ proposal.id }}/send" id="send-to-client-form">
+        <div class="field">
+          <label for="send_company_name">Client/Company</label>
+          <input type="text" id="send_company_name" value="{{ proposal.company_name }}" disabled>
+        </div>
+        <div class="field">
+          <label for="send_client_name">Representative</label>
+          <input type="text" id="send_client_name" name="client_name" value="{{ proposal.client_name }}" required>
+        </div>
+        <div class="field" style="margin-bottom: 20px;">
+          <label for="send_client_email">Representative Email</label>
+          <input type="email" id="send_client_email" name="client_email" value="{{ proposal.client_email }}" required>
+        </div>
+        <div class="quick-actions" style="margin: 0;">
+          <button type="submit" class="btn" data-loading-text="Sending…">
+            <span class="spinner" hidden></span>
+            <span data-btn-text>Confirm &amp; Send</span>
+          </button>
+          <button type="button" class="btn btn-secondary" id="cancel-send-confirm-modal">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    {% endif %}
     {% endif %}
 
     {% if error %}
@@ -115,7 +150,8 @@
             {% for ref in attached_references %}
             <div class="list-item">
               <div class="list-item-main">{{ ref.name }}{% if ref.tags %}<div class="list-item-meta">{{ ref.tags|join(', ') }}</div>{% endif %}</div>
-              <form method="post" action="/proposals/{{ proposal.id }}/references/{{ ref.id }}/remove" class="inline-form">
+              <form method="post" action="/proposals/{{ proposal.id }}/references/{{ ref.id }}/remove" class="inline-form"
+                    onsubmit="return confirm('Remove \'{{ ref.name }}\' from this proposal?{% if not ref.is_library %} It is not in the shared library, so it will be permanently deleted after 7 days unless you re-attach it or add it to the library first. This cannot be undone once it is deleted.{% endif %}');">
                 <button type="submit" class="btn btn-sm btn-secondary">Remove</button>
               </form>
             </div>
@@ -369,10 +405,11 @@
       // Strip ?just_approved=1 so a refresh or back-nav doesn't re-trigger this.
       window.history.replaceState(null, "", window.location.pathname);
       var sendBtn = document.getElementById("approved-modal-send");
-      var sendForm = document.getElementById("send-to-client-form");
-      if (sendBtn && sendForm) {
+      var sendConfirmModal = document.getElementById("send-confirm-modal");
+      if (sendBtn && sendConfirmModal) {
         sendBtn.addEventListener("click", function () {
-          sendForm.submit();
+          modal.close();
+          sendConfirmModal.showModal();
         });
       }
       var notYetBtn = document.getElementById("approved-modal-not-yet");
@@ -423,6 +460,16 @@
             row.hidden = term.length > 0 && row.dataset.search.indexOf(term) === -1;
           });
         });
+      }
+
+      var openSendModalBtn = document.getElementById("open-send-confirm-modal");
+      var sendConfirmModal = document.getElementById("send-confirm-modal");
+      var cancelSendModalBtn = document.getElementById("cancel-send-confirm-modal");
+      if (openSendModalBtn && sendConfirmModal) {
+        openSendModalBtn.addEventListener("click", function () { sendConfirmModal.showModal(); });
+      }
+      if (cancelSendModalBtn && sendConfirmModal) {
+        cancelSendModalBtn.addEventListener("click", function () { sendConfirmModal.close(); });
       }
     })();
   </script>

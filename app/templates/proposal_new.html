@@ -91,7 +91,8 @@
               {% if ref.description %}<div class="list-item-meta">{{ ref.description }}</div>{% endif %}
             </div>
             <button type="submit" formaction="/proposals/new/remove-reference" formnovalidate
-                    name="remove_reference_file_id" value="{{ ref.id }}" class="btn btn-sm btn-secondary">
+                    name="remove_reference_file_id" value="{{ ref.id }}" class="btn btn-sm btn-secondary"
+                    onclick="return confirm('Remove \'{{ ref.name }}\' from this proposal?{% if not ref.is_library %} It is not in the shared library, so it will be permanently deleted after 7 days unless you re-attach it or add it to the library first. This cannot be undone once it is deleted.{% endif %}');">
               Remove
             </button>
           </div>

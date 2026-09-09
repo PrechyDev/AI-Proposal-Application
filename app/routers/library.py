@@ -10,7 +10,12 @@ from app.auth import require_can_create
 from app.db import get_db
 from app.models import Proposal, ProposalReference, ReferenceFile, User
 from app.pagination import paginate
-from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
+from app.services.reference_files import (
+    ReferenceFileError,
+    parse_tags,
+    purge_orphaned_reference_files,
+    upload_reference_file,
+)
 from app.storage import StorageError, create_signed_url, delete_file
 from app.templating import templates
 
@@ -121,6 +126,7 @@ def library_page(
     user: User = Depends(require_can_create),
 ):
     _purge_expired_trash(db)
+    purge_orphaned_reference_files(db)
     return _render_library(request, db, user, view=view, page=page)
 
 
@@ -143,6 +149,7 @@ def upload_library_files(
     a .docx.
     """
     _purge_expired_trash(db)
+    purge_orphaned_reference_files(db)
     errors = []
     created = 0
     for file, name, description, row_tags in zip(files, names, descriptions, tags):
@@ -198,6 +205,7 @@ def trash_file(
     user: User = Depends(require_can_create),
 ):
     _purge_expired_trash(db)
+    purge_orphaned_reference_files(db)
     reference_file = db.get(ReferenceFile, reference_file_id)
     if reference_file is None or reference_file.deleted_at is not None:
         return _render_library(request, db, user, error="File not found.", status_code=404)
@@ -228,6 +236,7 @@ def trash_selected_files(
     user: User = Depends(require_can_create),
 ):
     _purge_expired_trash(db)
+    purge_orphaned_reference_files(db)
     trashed = 0
     skipped = []
     for reference_file_id in reference_file_ids:

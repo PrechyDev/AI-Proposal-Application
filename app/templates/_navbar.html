@@ -3,7 +3,7 @@
     <a href="/dashboard" class="wordmark">Koya Talent</a>
     <div class="navbar-links">
       {% if user.can_create %}
-      <a href="/proposals/new" class="nav-link">New Proposal</a>
+      <a href="/proposals/new" class="btn btn-sm">+ New Proposal</a>
       <a href="/library" class="nav-link">Reference Library</a>
       {% endif %}
       {% if user.can_create or user.can_approve %}

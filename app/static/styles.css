@@ -101,7 +101,7 @@ a {
   color: var(--color-primary);
 }
 
-.field input,
+.field input:not([type="checkbox"]):not([type="radio"]),
 .field select,
 .field textarea {
   width: 100%;
@@ -209,13 +209,23 @@ a {
   color: #FFFFFF;
 }
 
-.btn:disabled {
-  opacity: 0.8;
+/* A disabled .btn used to just dim the same gold fill (opacity: 0.8) -
+   barely different from the enabled state, easy to mistake for still
+   clickable. Disabled now reads as a genuinely inert, neutral control
+   regardless of which button class it started from. */
+.btn:disabled,
+.btn-secondary:disabled {
+  opacity: 1;
+  background-color: var(--color-border);
+  color: var(--color-muted);
+  border-color: var(--color-border);
   cursor: not-allowed;
 }
 
-.btn:disabled:hover {
-  background-color: var(--color-accent);
+.btn:disabled:hover,
+.btn-secondary:disabled:hover {
+  background-color: var(--color-border);
+  color: var(--color-muted);
 }
 
 .btn-block {
@@ -232,6 +242,21 @@ a {
 .btn-secondary:hover {
   background-color: var(--color-bg);
   color: var(--color-primary);
+}
+
+/* Destructive actions (permanent delete, move to trash) - outlined in the
+   same danger red used for error banners, so a "this can't be undone"
+   action reads as visually distinct from an ordinary secondary one
+   rather than looking identical to "Restore" right next to it. */
+.btn-danger {
+  background-color: transparent;
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+}
+
+.btn-danger:hover {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 .btn-sm {
@@ -396,7 +421,7 @@ html.is-navigating #nav-progress-bar {
 
 .page-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
@@ -509,6 +534,12 @@ html.is-navigating #nav-progress-bar {
   font-weight: bold;
   padding: 2px 10px;
   border-radius: 999px;
+}
+
+.header-total {
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--color-muted);
 }
 
 .count-pill.has-items {
@@ -1111,15 +1142,59 @@ html.is-navigating #nav-progress-bar {
   border: none;
   border-radius: 4px;
   background: none;
-  font-size: 15px;
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  color: var(--color-muted);
+  color: var(--color-danger);
 }
 
 .trash-icon-btn:hover {
   background-color: var(--color-danger-bg);
-  color: var(--color-danger);
+}
+
+/* Always-visible Client/Company + Representative + Representative Email
+   line on the workspace page - previously the representative's email was
+   only ever visible inside the Raw Inputs panel, which disappears
+   entirely once a proposal is finalized (approved/sent), i.e. exactly
+   when double-checking the delivery address matters most. */
+.client-details-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-bottom: 16px;
+}
+
+.client-details-line strong {
+  color: var(--color-text);
+}
+
+.send-confirm-modal {
+  max-width: 420px;
+  width: 90%;
+  padding: 28px;
+  border: none;
+  border-radius: 8px;
+  background-color: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.25);
+}
+
+.send-confirm-modal::backdrop {
+  background-color: rgba(31, 45, 61, 0.5);
+}
+
+.send-confirm-modal h3 {
+  font-family: var(--font-heading);
+  color: var(--color-primary);
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.send-confirm-modal p {
+  color: var(--color-text);
+  margin: 0 0 16px;
+  font-size: 14px;
 }
 
 .approved-modal {
@@ -1208,14 +1283,29 @@ html.is-navigating #nav-progress-bar {
   gap: 16px 20px;
 }
 
+/* Two date inputs need roughly double a normal filter field's width - left
+   at a single auto-fit grid column (like every other filter field here),
+   it either crams both dates illegibly narrow or, once it wraps to its
+   own row past the other 4 fields, ends up stranded at the grid's left
+   edge with the rest of that row empty. Spanning the full grid width
+   fixes the stranding - but spanning the full grid row while capping the
+   two inputs at a natural width just moved the dead space rather than
+   removing it (a wide empty gap to the right of the two compact date
+   pickers, instead of beside the whole field). The field now sits
+   outside the grid entirely, as its own row sized to its actual content
+   width - never a stretched container with room it doesn't use. */
+.date-range-field {
+  margin-top: 16px;
+}
+
 .date-range-inputs {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
 .date-range-inputs input {
-  flex: 1;
+  width: 200px;
 }
 
 .filter-actions {

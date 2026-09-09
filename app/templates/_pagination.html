@@ -12,4 +12,8 @@
   <span class="btn btn-sm btn-secondary" disabled>Next &rarr;</span>
   {% endif %}
 </div>
+{% else %}
+<div class="pagination pagination-single-page">
+  <span class="gate-note">{{ pagination.total_count }} total</span>
+</div>
 {% endif %}

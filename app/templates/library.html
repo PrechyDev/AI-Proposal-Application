@@ -11,7 +11,6 @@
   <div class="page">
     <div class="page-header">
       <h1>Reference Library</h1>
-      <span class="count-pill {% if files %}has-items{% endif %}">{{ pagination.total_count }}</span>
     </div>
     <p class="gate-note" style="margin-top: -8px; margin-bottom: 20px;">
       Reusable reference files (case studies, rate cards, past work) shared with everyone and available to attach to any proposal.
@@ -27,8 +26,8 @@
     </div>
 
     {% if view == 'all' %}
-    <details class="section-edit-toggle" style="margin-bottom: 24px;">
-      <summary>Upload New Reference Files</summary>
+    <details class="action-menu" style="margin-bottom: 24px;">
+      <summary class="btn btn-sm">&#8593; Upload New Reference Files</summary>
       <div class="section-card" style="margin-top: 8px;">
         <form method="post" action="/library/upload" enctype="multipart/form-data" id="upload-form">
           <div class="dropzone" id="lib-dropzone" tabindex="0" role="button" aria-label="Add files">
@@ -51,7 +50,7 @@
 
     <form method="post" action="/library/trash-selected" id="bulk-form">
       <div class="quick-actions" id="bulk-bar" hidden style="margin-bottom: 12px;">
-        <button type="submit" class="btn btn-secondary btn-sm">Move Selected to Trash</button>
+        <button type="submit" class="btn btn-danger btn-sm">&#128465; Move Selected to Trash</button>
       </div>
 
       {% if files %}
@@ -100,7 +99,7 @@
     {% else %}
     {% if files %}
     <form method="post" action="/library/empty-trash" style="margin-bottom: 12px;" onsubmit="return confirm('Permanently delete every file shown below? This cannot be undone.');">
-      <button type="submit" class="btn btn-secondary btn-sm">Empty Trash</button>
+      <button type="submit" class="btn btn-danger btn-sm">&#128465; Empty Trash</button>
     </form>
     <div style="overflow-x: auto;">
       <table class="data-table">
@@ -126,7 +125,7 @@
                   <button type="submit" class="btn btn-sm btn-secondary">Restore</button>
                 </form>
                 <form method="post" action="/library/{{ f.id }}/delete-permanent" class="inline-form" onsubmit="return confirm('Permanently delete \'{{ f.name }}\'? This cannot be undone.');">
-                  <button type="submit" class="btn btn-sm btn-secondary">Delete Permanently</button>
+                  <button type="submit" class="btn btn-sm btn-danger">&#128465; Delete Permanently</button>
                 </form>
               </div>
             </td>

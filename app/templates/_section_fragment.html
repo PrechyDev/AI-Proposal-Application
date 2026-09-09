@@ -70,8 +70,8 @@
 
   <div class="section-content-view">{{ view.section.content | strip_dup_heading(view.title) | markdown }}</div>
 
-  <details class="section-edit-toggle">
-    <summary>Edit manually</summary>
+  <details class="action-menu">
+    <summary class="btn btn-sm btn-secondary">&#9998; Edit manually</summary>
     <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
           hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
           hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML"

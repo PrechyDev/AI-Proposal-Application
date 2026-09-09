@@ -1,7 +1,15 @@
+import logging
 import re
 import uuid
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app import storage
+from app.models import ProposalReference, ReferenceFile
+
+logger = logging.getLogger(__name__)
 
 # Deliberately limited to formats Claude's Messages API reads natively as a
 # single content block, with no local parsing and no extra Anthropic API
@@ -81,6 +89,51 @@ def upload_reference_file(filename: str, content: bytes) -> str:
     except storage.StorageError as exc:
         raise ReferenceFileError(f"Could not upload file to storage: {exc}") from None
     return storage_path
+
+
+ORPHAN_RETENTION_DAYS = 7
+
+
+def purge_orphaned_reference_files(db: Session) -> None:
+    """A device upload that was never added to the shared library (see the
+    "Also add to library" checkbox on the upload panels) has no path in the
+    UI to ever be found again once it's detached from every proposal - it
+    isn't on the Library page (that's filtered to is_library=True), can't
+    be re-attached anywhere, and has no trash/delete control reaching it.
+    Same lazy-check pattern as _purge_expired_trash in app/routers/library.py
+    (spec's "no background jobs" constraint) - run opportunistically
+    whenever someone's already loading a relevant page, not on a schedule.
+
+    Deliberately excludes anything still attached to any proposal
+    (regardless of that proposal's status) and anything already in the
+    Trash flow (deleted_at set - that path has its own 30-day purge). A
+    library file (is_library=True) is never touched here even if nothing
+    currently attaches to it - it stays manageable via the Library page on
+    its own terms.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=ORPHAN_RETENTION_DAYS)
+    attached_ids = select(ProposalReference.reference_file_id)
+    orphaned = db.execute(
+        select(ReferenceFile).where(
+            ReferenceFile.is_library.is_(False),
+            ReferenceFile.deleted_at.is_(None),
+            ReferenceFile.created_at < cutoff,
+            ReferenceFile.id.notin_(attached_ids),
+        )
+    ).scalars().all()
+
+    purged = 0
+    for f in orphaned:
+        try:
+            storage.delete_file(f.storage_path)
+        except storage.StorageError:
+            logger.exception("Failed to purge orphaned reference file id=%s from storage", f.id)
+            continue
+        db.delete(f)
+        purged += 1
+    if purged:
+        db.commit()
+        logger.info("Purged %d orphaned reference file(s) (never added to library, unattached to any proposal)", purged)
 
 
 def parse_tags(raw: str) -> list[str]:

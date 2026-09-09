@@ -18,7 +18,7 @@
 
     {% if user.can_create %}
     <div class="quick-actions">
-      <a href="/proposals/new" class="btn">New Proposal</a>
+      <a href="/proposals/new" class="btn">+ New Proposal</a>
       <a href="/library" class="btn btn-secondary">Reference Library</a>
       <a href="/proposals" class="btn btn-secondary">My Proposals</a>
     </div>
@@ -89,7 +89,6 @@
     <div class="section">
       <div class="section-header">
         <h2>Recent Proposals</h2>
-        <span class="count-pill {% if recent_proposals %}has-items{% endif %}">{{ recent_proposals|length }}</span>
       </div>
       {% if recent_proposals %}
       <div style="overflow-x: auto;">

@@ -11,7 +11,6 @@
   <div class="page">
     <div class="page-header">
       <h1>All Proposals</h1>
-      <span class="count-pill {% if proposals %}has-items{% endif %}">{{ pagination.total_count }}</span>
     </div>
 
     {% if error %}
@@ -54,13 +53,13 @@
             {% endfor %}
           </select>
         </div>
-        <div class="field">
-          <label for="filter_from">Date Range</label>
-          <div class="date-range-inputs">
-            <input type="date" name="date_from" id="filter_from" value="{{ filters.date_from }}" aria-label="From date">
-            <span class="gate-note">to</span>
-            <input type="date" name="date_to" id="filter_to" value="{{ filters.date_to }}" aria-label="To date">
-          </div>
+      </div>
+      <div class="field date-range-field">
+        <label for="filter_from">Date Range</label>
+        <div class="date-range-inputs">
+          <input type="date" name="date_from" id="filter_from" value="{{ filters.date_from }}" aria-label="From date">
+          <span class="gate-note">to</span>
+          <input type="date" name="date_to" id="filter_to" value="{{ filters.date_to }}" aria-label="To date">
         </div>
       </div>
       <div class="quick-actions filter-actions">
