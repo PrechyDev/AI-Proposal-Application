@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
-from app.auth import require_user
+from app.auth import get_current_user, require_user
 from app.config import get_settings
 from app.db import engine, get_db
 from app.models import DeliveryLog, Proposal, User
@@ -107,8 +107,10 @@ def health(db: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/")
-def index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html", context={})
+def index(user: User | None = Depends(get_current_user)):
+    if user is not None:
+        return RedirectResponse(url="/dashboard", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)
 
 
 def _get_nudge_candidates(user: User, db: Session) -> list[dict]:
