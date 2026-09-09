@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import SESSION_USER_KEY, get_current_user
 from app.db import get_db
 from app.models import User
+from app.rate_limit import limiter
 from app.security import verify_password
 from app.templating import templates
 
@@ -24,6 +25,7 @@ def login_form(request: Request, user: User | None = Depends(get_current_user)):
 
 
 @router.post("/login")
+@limiter.limit("5/minute")
 def login_submit(
     request: Request,
     # "" not Form(...): Starlette's urlencoded-form parser drops blank

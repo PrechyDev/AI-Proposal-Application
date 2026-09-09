@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
@@ -18,6 +19,7 @@ from app.models.proposal import PROPOSAL_STATUSES
 from app.routers.account import router as account_router
 from app.routers.admin import router as admin_router
 from app.routers.approvals import router as approvals_router
+from app.rate_limit import limiter
 from app.routers.auth import router as auth_router
 from app.routers.client_view import router as client_view_router
 from app.routers.library import router as library_router
@@ -59,7 +61,21 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    """A friendly page instead of slowapi's default raw JSON error - same
+    simple-card style as proposal_being_updated.html. Still calls the
+    library's own _inject_headers so the standard rate-limit headers
+    (Retry-After etc.) are set the same way its default handler does.
+    """
+    response = templates.TemplateResponse(
+        request=request, name="rate_limited.html", context={}, status_code=status.HTTP_429_TOO_MANY_REQUESTS
+    )
+    return request.app.state.limiter._inject_headers(response, request.state.view_rate_limit)
+
+
 app = FastAPI(title="AI Proposal Application", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key, same_site="lax")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_router)

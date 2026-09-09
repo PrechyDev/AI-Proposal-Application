@@ -10,6 +10,7 @@ from app.auth import SESSION_USER_KEY
 from app.config import get_settings
 from app.db import get_db
 from app.models import User
+from app.rate_limit import limiter
 from app.security import hash_password
 from app.services.account_tokens import check_reset_code, consume_token, find_valid_invite, issue_reset_code
 from app.services.email import EmailError, send_email
@@ -94,6 +95,7 @@ def forgot_password_form(request: Request, email: str = ""):
 
 
 @router.post("/forgot-password")
+@limiter.limit("5/minute")
 def forgot_password_submit(request: Request, email: str = Form(""), db: Session = Depends(get_db)):
     email = email.strip().lower()
 

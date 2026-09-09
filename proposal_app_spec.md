@@ -238,6 +238,16 @@ Both share one `account_tokens` table (`purpose`: `invite` or `reset`) - same sh
 
 ---
 
+### 6e. Security Audit: Rate-Limiting Added, CSRF Deliberately Skipped
+
+**Status: implemented post-§6d (2026-09-09).** A production-readiness audit (the Koya program's graded checklist - error handling, edge cases, cost/resource awareness, idempotency, security - adapted to this FastAPI codebase since no n8n workflow exists here) found two security gaps. Both were investigated before deciding what to build; full process detail lives in `PROGRESS.md`'s dated entry for this window.
+
+**Rate-limiting on `/login` and `/forgot-password`: added.** Neither route had any throttling before this - unlimited automated password guessing against any known email, or unlimited reset-code spam, with only bcrypt's own hashing cost as friction. `slowapi` (`app/rate_limit.py`), `5/minute` per IP (`get_remote_address`, in-memory storage - no Redis, matching this app's existing no-extra-infrastructure precedent from the trash/orphan purges and the live dashboard nudge query), with a custom 429 page matching the app's existing simple-card style rather than the library's raw JSON default. Keyed on IP alone, not IP+email, since a combined key would need reading form data before slowapi's own request handling - not the library's documented pattern - and per-IP already closes the actual gap (there was no mitigation at all before this).
+
+**CSRF token protection: investigated, deliberately not built.** This app already sets `SameSite=Lax` on its session cookie (§2/§10), which defeats the classic forged-cross-site-form CSRF attack on its own - a browser withholds the session cookie on a cross-site POST under `Lax`, so a forged request arrives unauthenticated and is rejected the same as any anonymous one. The residual gap (pre-2018 browsers with no `SameSite` support) isn't a real threat for an internal B2B tool. Both CSRF libraries considered had real drawbacks that would have outweighed that residual gain: `starlette-csrf` validates its token only via an HTTP header, never a form field, incompatible with this app's 38 plain-HTML form submissions without rewriting all of them through JavaScript; `fastapi-csrf-protect` supports form-field tokens but only via per-route `Depends()`, not global middleware, so a future new route could ship unprotected with nothing structurally catching it. Decided with the user to skip full CSRF protection entirely, including a lighter Origin/Referer-header-check alternative offered as a fallback - not a deferred TODO, a closed call, revisit only if the threat model changes (e.g. a public-facing portal gains real state-changing actions beyond the current read-only `/view/{token}`).
+
+---
+
 ## 7. Edge Cases and How They're Solved
 
 | Edge case | Solution |
