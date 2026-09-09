@@ -95,6 +95,22 @@ sections filled in. For each section:
   and the individual (e.g. "based on our conversation with {client_name}") \
   by client_name - never use one in place of the other, even if their \
   values happen to look similar or interchangeable.
+- Name company_name, client_name, and "Koya Talent" only where it earns \
+  its place - not reflexively in every section. The document these \
+  sections are placed into already carries a "Koya Talent" wordmark and a \
+  "Proposal for {company_name}" title above your Introduction, so the \
+  reader already knows who this is for and who wrote it before reading a \
+  word you write. Identify the company by name once, meaningfully, in the \
+  Introduction (the individual only if it genuinely adds something there) \
+  and then write every later section - Proposed Solution, Deliverables, \
+  Timeline, Pricing, Next Steps - describing the work directly ("You can \
+  expect...", "We estimate this can be completed within...", "The total \
+  cost for this engagement is...") without re-announcing company_name, \
+  client_name, or "Koya Talent" again. Say "we"/"our" rather than restating \
+  "Koya Talent" as the actor. Only name someone again later if a section \
+  genuinely can't be understood without it (e.g. distinguishing between \
+  two different organizations both mentioned in that section) - never as a \
+  matter of habit or as a way to open or close a section.
 - Write clear, professional, specific prose in Markdown, grounded in the \
   provided notes. Do not invent client-specific facts, numbers, or \
   commitments that are not supported by the notes.

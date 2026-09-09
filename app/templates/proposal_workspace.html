@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ proposal.client_name }} — Koya Talent</title>
+  <title>{{ proposal.company_name }} — Koya Talent</title>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/htmx.min.js"></script>
 </head>
@@ -11,7 +11,7 @@
 
   <div class="page">
     <div class="page-header">
-      <h1>{{ proposal.client_name }} ({{ proposal.company_name }})</h1>
+      <h1>{{ proposal.company_name }} ({{ proposal.client_name }})</h1>
       <span class="status-pill status-{{ proposal.status }}">{{ proposal.status.replace('_', ' ')|title }}</span>
       {% if client_view_url %}
       <button type="button" class="btn btn-secondary btn-sm" onclick="navigator.clipboard.writeText('{{ client_view_url }}'); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy Client Link', 1500);">
@@ -66,16 +66,16 @@
         <form method="post" action="/proposals/{{ proposal.id }}/regenerate-full" id="raw-inputs-form"
               onsubmit="return confirm('Regenerate the entire proposal from these inputs? This rewrites every section and the proposal will be inaccessible to you and your approver until it finishes.');">
           <div class="field">
-            <label for="ri_client_name">Client Name</label>
+            <label for="ri_company_name">Client/Company</label>
+            <input type="text" id="ri_company_name" name="company_name" value="{{ iv.company_name }}" required>
+          </div>
+          <div class="field">
+            <label for="ri_client_name">Representative</label>
             <input type="text" id="ri_client_name" name="client_name" value="{{ iv.client_name }}" required>
           </div>
           <div class="field">
-            <label for="ri_client_email">Client Email</label>
+            <label for="ri_client_email">Representative Email</label>
             <input type="email" id="ri_client_email" name="client_email" value="{{ iv.client_email }}" required>
-          </div>
-          <div class="field">
-            <label for="ri_company_name">Company Name</label>
-            <input type="text" id="ri_company_name" name="company_name" value="{{ iv.company_name }}" required>
           </div>
           <div class="field">
             <label for="ri_date_of_call">Date of Call</label>

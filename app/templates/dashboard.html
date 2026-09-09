@@ -52,7 +52,7 @@
         {% for p in pending_approvals %}
         <div class="list-item">
           <div class="list-item-main">
-            <a href="/proposals/{{ p.id }}" class="list-item-title">{{ p.client_name }} ({{ p.company_name }})</a>
+            <a href="/proposals/{{ p.id }}" class="list-item-title">{{ p.company_name }} ({{ p.client_name }})</a>
             <div class="list-item-meta">Submitted {{ p.updated_at.strftime('%Y-%m-%d') }}</div>
           </div>
           <a href="/proposals/{{ p.id }}" class="btn btn-sm">Review</a>
@@ -76,7 +76,7 @@
         {% for item in nudge_candidates %}
         <div class="list-item">
           <div class="list-item-main">
-            <a href="/proposals/{{ item.proposal.id }}" class="list-item-title">{{ item.proposal.client_name }} ({{ item.proposal.company_name }})</a>
+            <a href="/proposals/{{ item.proposal.id }}" class="list-item-title">{{ item.proposal.company_name }} ({{ item.proposal.client_name }})</a>
             <div class="list-item-meta">Unopened for {{ item.days_unopened }} day{{ 's' if item.days_unopened != 1 else '' }}</div>
           </div>
           <a href="/proposals/{{ item.proposal.id }}" class="btn btn-sm btn-secondary">View</a>
@@ -96,7 +96,7 @@
         <table class="proposal-table">
           <thead>
             <tr>
-              <th>Client</th>
+              <th>Client/Company</th>
               <th>Status</th>
               <th>Last Updated</th>
               <th></th>
@@ -105,7 +105,7 @@
           <tbody>
             {% for p in recent_proposals %}
             <tr>
-              <td><a href="/proposals/{{ p.id }}">{{ p.client_name }}</a><div class="cell-meta">{{ p.company_name }}</div></td>
+              <td><a href="/proposals/{{ p.id }}">{{ p.company_name }}</a><div class="cell-meta">Representative: {{ p.client_name }}</div></td>
               <td><span class="status-pill status-{{ p.status }}">{{ status_labels.get(p.status, p.status) }}</span></td>
               <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
               <td><a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a></td>

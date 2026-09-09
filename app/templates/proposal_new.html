@@ -31,16 +31,16 @@
       <div class="section-card">
         <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Intake Details</h3>
         <div class="field">
-          <label for="np_client_name">Client Name</label>
+          <label for="np_company_name">Client/Company</label>
+          <input type="text" id="np_company_name" name="company_name" value="{{ values.company_name or '' }}" required>
+        </div>
+        <div class="field">
+          <label for="np_client_name">Representative</label>
           <input type="text" id="np_client_name" name="client_name" value="{{ values.client_name or '' }}" required>
         </div>
         <div class="field">
-          <label for="np_client_email">Client Email</label>
+          <label for="np_client_email">Representative Email</label>
           <input type="email" id="np_client_email" name="client_email" value="{{ values.client_email or '' }}" required>
-        </div>
-        <div class="field">
-          <label for="np_company_name">Company Name</label>
-          <input type="text" id="np_company_name" name="company_name" value="{{ values.company_name or '' }}" required>
         </div>
         <div class="field">
           <label for="np_date_of_call">Date of Call</label>

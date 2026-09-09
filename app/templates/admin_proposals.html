@@ -74,7 +74,7 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th>Client</th>
+            <th>Client/Company</th>
             <th>Salesperson</th>
             <th>Approver</th>
             <th>Status</th>
@@ -86,7 +86,7 @@
         <tbody>
           {% for p in proposals %}
           <tr>
-            <td><a href="/proposals/{{ p.id }}">{{ p.client_name }}</a><div class="cell-meta">{{ p.company_name }}</div></td>
+            <td><a href="/proposals/{{ p.id }}">{{ p.company_name }}</a><div class="cell-meta">Representative: {{ p.client_name }}</div></td>
             <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
             <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
             <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
