@@ -38,18 +38,25 @@ def login_submit(
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     # password_hash is None for an invited user who hasn't completed setup
     # yet (app/routers/account.py) - checked before verify_password, which
-    # can't accept None as a hash.
-    if (
-        user is None
-        or not user.is_active
-        or user.password_hash is None
-        or not verify_password(password, user.password_hash)
-    ):
+    # can't accept None as a hash. is_active is deliberately NOT part of
+    # this check - it's verified separately below, only once the password
+    # itself is confirmed correct, so a distinct "deactivated" message can
+    # never be used to enumerate accounts by someone who doesn't already
+    # hold valid credentials for them.
+    if user is None or user.password_hash is None or not verify_password(password, user.password_hash):
         logger.warning("Failed login attempt for email=%s", email)
         return templates.TemplateResponse(
             request=request,
             name="login.html",
             context={"error": "Invalid email or password."},
+            status_code=401,
+        )
+    if not user.is_active:
+        logger.warning("Login attempt for deactivated user id=%s", user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={"error": "This account has been deactivated. Please reach out to your admin."},
             status_code=401,
         )
     request.session[SESSION_USER_KEY] = user.id
