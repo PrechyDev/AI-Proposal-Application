@@ -9,7 +9,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+_MAILJET_URL = "https://api.mailjet.com/v3.1/send"
 _TIMEOUT = 15.0
 _GMAIL_SMTP_HOST = "smtp.gmail.com"
 _GMAIL_SMTP_PORT = 587
@@ -30,80 +30,87 @@ def send_email(
     reply_to: str | None = None,
 ) -> None:
     """Every proposal-related email is sent from the one central address
-    (EMAIL_FROM_ADDRESS/EMAIL_FROM_NAME) via Brevo - never a per-salesperson
+    (EMAIL_FROM_ADDRESS/EMAIL_FROM_NAME) via Mailjet - never a per-salesperson
     address. `cc`/`reply_to` are per-call, not global config, since who
     they point at depends on which salesperson owns the specific proposal
     being emailed about, not a fixed setting.
 
-    Falls back to Gmail SMTP if Brevo isn't configured at all, or if a real
-    send attempt to it fails (e.g. the account gets suspended) - only
+    Falls back to Gmail SMTP if Mailjet isn't configured at all, or if a
+    real send attempt to it fails (e.g. the account gets suspended) - only
     raises `EmailError` if neither path works. This is a backup path, not
     an equal alternative: mail sent this way shows the real Gmail address
-    as the sender, not the central Brevo one, since Gmail's SMTP relay
+    as the sender, not the central Mailjet one, since Gmail's SMTP relay
     won't send "as" an unrelated address without domain delegation this
     app doesn't have.
 
-    `USE_BREVO=false` skips Brevo entirely - not even checking whether its
-    credentials are present - and goes straight to Gmail. A manual override
-    for forcing Gmail (e.g. during a known Brevo outage) without having to
-    remove real credentials from `.env` to do it.
+    `USE_MAILJET=false` skips Mailjet entirely - not even checking whether
+    its credentials are present - and goes straight to Gmail. A manual
+    override for forcing Gmail (e.g. during a known Mailjet outage) without
+    having to remove real credentials from `.env` to do it.
     """
     settings = get_settings()
-    brevo_configured = (
-        settings.use_brevo and bool(settings.brevo_api_key and settings.email_from_address)
+    mailjet_configured = settings.use_mailjet and bool(
+        settings.mailjet_api_key and settings.mailjet_api_secret and settings.email_from_address
     )
 
-    if not settings.use_brevo:
-        logger.info("USE_BREVO=false, skipping Brevo entirely and using Gmail for this send.")
-    elif brevo_configured:
+    if not settings.use_mailjet:
+        logger.info("USE_MAILJET=false, skipping Mailjet entirely and using Gmail for this send.")
+    elif mailjet_configured:
         try:
-            _send_via_brevo(to, subject, html, cc, reply_to)
+            _send_via_mailjet(to, subject, html, cc, reply_to)
             return
         except EmailError as exc:
-            logger.warning("Brevo send failed, falling back to Gmail: %s", exc)
+            logger.warning("Mailjet send failed, falling back to Gmail: %s", exc)
     else:
-        logger.warning("Brevo not configured, falling back to Gmail for this send.")
+        logger.warning("Mailjet not configured, falling back to Gmail for this send.")
 
     _send_via_gmail(to, subject, html, cc, reply_to)
 
 
-def _send_via_brevo(to: str, subject: str, html: str, cc: str | None, reply_to: str | None) -> None:
+def _send_via_mailjet(to: str, subject: str, html: str, cc: str | None, reply_to: str | None) -> None:
     settings = get_settings()
-    body = {
-        "sender": {"name": settings.email_from_name, "email": settings.email_from_address},
-        "to": [{"email": to}],
-        "subject": subject,
-        "htmlContent": html,
+    message: dict = {
+        "From": {"Email": settings.email_from_address, "Name": settings.email_from_name},
+        "To": [{"Email": to}],
+        "Subject": subject,
+        "HTMLPart": html,
     }
     if cc:
-        body["cc"] = [{"email": cc}]
+        message["Cc"] = [{"Email": cc}]
     if reply_to:
-        body["replyTo"] = {"email": reply_to}
+        # No native ReplyTo field on the v3.1 message object - Mailjet's
+        # documented mechanism for this is a raw email header instead.
+        message["Headers"] = {"Reply-To": reply_to}
 
     try:
         resp = httpx.post(
-            _BREVO_URL,
-            headers={
-                "api-key": settings.brevo_api_key,
-                "content-type": "application/json",
-                "accept": "application/json",
-            },
-            json=body,
+            _MAILJET_URL,
+            auth=(settings.mailjet_api_key, settings.mailjet_api_secret),
+            headers={"content-type": "application/json", "accept": "application/json"},
+            json={"Messages": [message]},
             timeout=_TIMEOUT,
         )
     except httpx.HTTPError as exc:
-        raise EmailError(f"Could not reach Brevo: {exc}") from None
+        raise EmailError(f"Could not reach Mailjet: {exc}") from None
 
     if resp.status_code not in (200, 201):
-        logger.error("Brevo send failed (%s): %s", resp.status_code, resp.text)
-        raise EmailError(f"Brevo request failed with status {resp.status_code}: {resp.text}")
+        logger.error("Mailjet send failed (%s): %s", resp.status_code, resp.text)
+        raise EmailError(f"Mailjet request failed with status {resp.status_code}: {resp.text}")
+
+    # Mailjet can return HTTP 200 while an individual message inside
+    # "Messages" still failed (e.g. an unverified sender) - the per-message
+    # "Status" field is the real success signal, not just the HTTP code.
+    sent = resp.json().get("Messages", [{}])[0]
+    if sent.get("Status") != "success":
+        logger.error("Mailjet reported a non-success status: %s", sent)
+        raise EmailError(f"Mailjet reported a non-success status: {sent}")
 
 
 def _send_via_gmail(to: str, subject: str, html: str, cc: str | None, reply_to: str | None) -> None:
     settings = get_settings()
     if not settings.gmail_address or not settings.gmail_app_password:
         raise EmailError(
-            "No email provider available - Brevo failed/unconfigured, and the Gmail fallback "
+            "No email provider available - Mailjet failed/unconfigured, and the Gmail fallback "
             "(GMAIL_ADDRESS/GMAIL_APP_PASSWORD) isn't configured either - see .env.example."
         )
 

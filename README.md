@@ -22,7 +22,7 @@ Read these two documents alongside this one, in this order:
 - **Database**: Postgres via Supabase, isolated in its own `proposal_app` schema
 - **File storage**: Supabase Storage (reference files)
 - **AI**: Claude API (Anthropic), forced tool-use for structured output
-- **Email**: Brevo (primary), Gmail SMTP (fallback)
+- **Email**: Mailjet (primary), Gmail SMTP (fallback)
 - **PDF export**: Playwright headless-browser print, against the same template the
   in-app preview uses
 
@@ -37,7 +37,7 @@ Read these two documents alongside this one, in this order:
    cp .env.example .env
    ```
    See `.env.example` for what each variable is and where to find it (Supabase
-   dashboard, Anthropic console, Brevo/Gmail). Never commit `.env` — it holds live
+   dashboard, Anthropic console, Mailjet/Gmail). Never commit `.env` — it holds live
    secrets.
 3. **Run migrations**:
    ```

@@ -17,7 +17,7 @@ A FastAPI + Postgres web app where salespeople turn discovery-call notes into a 
 - Frontend: **Jinja2 templates + HTMX** — no separate SPA/build step; HTMX handles partial-page updates (e.g. regenerating one section) with plain backend endpoints
 - Database: **Postgres** (e.g. Supabase, consistent with your Week 2 project)
 - PDF export: **headless-browser print-to-PDF** (e.g. Playwright's PDF function) run against the *same* HTML template used for the in-app preview — this guarantees the preview a salesperson reviews is pixel-identical to what the client downloads, because there's only one template, not two parallel renderers
-- Email delivery: transactional email API — **Brevo** (see §8c for why, over the originally-considered Resend/SendGrid) — for approver notifications, client delivery, and changes-requested notifications (§8d)
+- Email delivery: transactional email API — **Mailjet** (see §8c for why, over the originally-considered Resend/SendGrid, and over Brevo which this app also briefly used before its account was suspended) — for approver notifications, client delivery, and changes-requested notifications (§8d)
 - AI: **Claude API** (model choice in §8)
 
 **Why FastAPI + Jinja/HTMX over a separate React frontend**: your core interaction — edit a section, see it update, without disturbing the rest of the page — is exactly what HTMX partial-swaps are built for, with one backend and one template layer. A separate frontend would only pay off if you needed complex client-side state, which this doesn't.
@@ -341,7 +341,7 @@ Once reference files (§14 step 8) are attached to a proposal, every generate/re
 - Two lighter alternatives were also considered and rejected: extracting text/images locally via pure-Python libraries (`python-docx`/`python-pptx`/`openpyxl`) — layout/positioning wouldn't be preserved, a smaller version of the same fidelity concern that ruled out `pypdf` for PDFs; and converting to PDF server-side via LibreOffice headless — pixel-perfect, but requires a system-level binary that isn't pip-installable, changing the deployment target from a stock Python buildpack to a custom Docker image (a §9/step 16 concern, not a library choice).
 - Given all three routes carry a real cost (new API surface, fidelity loss, or infra change) for a format this app can simply ask the user to convert instead, the decision was to not support Office formats at all rather than pick the least-bad option.
 
-### 8c. Email Provider: Brevo over Resend/SendGrid
+### 8c. Email Provider: Mailjet (after Brevo, after Resend/SendGrid)
 
 **Status: implemented post-step-14** (see `PROGRESS.md`'s post-step-14 follow-up). This spec originally named Resend/SendGrid only as examples (§2); Resend was the provider actually built and verified first (steps 9/12), then replaced by Brevo once the real requirement — send to arbitrary real recipients, on no budget (§8d) — collided with a hard limitation Resend's free tier has and Brevo's doesn't.
 
@@ -363,7 +363,9 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 
 **Backup path added post-step-16: Gmail SMTP.** `send_email()` tries Brevo first, and only falls back to a personal Gmail account (SMTP, app password) if Brevo is unconfigured or a real send attempt to it fails (e.g. the account gets suspended) — only raising an error if both fail. This is a backup, not an equal alternative: Gmail's SMTP relay can only send *as* the authenticated Gmail address itself (no domain delegation), so a fallback send shows that personal address as the sender rather than the central `EMAIL_FROM_ADDRESS`. `cc`/`reply_to` still work identically either way.
 
-**Manual override: `USE_BREVO=false`.** Skips Brevo entirely — not even checking whether its credentials are present — and always uses Gmail, without needing to remove real Brevo credentials from `.env` to force that (e.g. during a known Brevo outage). Defaults to `true`, matching the original try-Brevo-first behavior when unset.
+**Manual override, originally `USE_BREVO=false`, now `USE_MAILJET=false`.** Skips the primary provider entirely — not even checking whether its credentials are present — and always uses Gmail, without needing to remove real credentials from `.env` to force that (e.g. during a known provider outage). Defaults to `true`, matching the original try-primary-first behavior when unset.
+
+**Post-deployment: Brevo's account was suspended, replaced with Mailjet.** Once real invite/notification emails were flowing in production, the Brevo account got suspended — with no email provider working at all, since the Gmail SMTP backup path (added specifically for exactly this scenario) turned out to never have been a real backup on Render: Render's free web-service tier blocks outbound SMTP at the network level (confirmed by the actual production error, `[Errno 101] Network is unreachable`, when Gmail was attempted), so that fallback was silently dead the entire time this app has been deployed. **Mailjet was chosen as the replacement** after confirming, directly against Mailjet's own docs (not assumed): a free tier of 6,000/month (200/day), no card required; the same single-verified-sender model that made Brevo work (full DNS/domain verification is a deliverability recommendation, not a functional gate on sending to real recipients); and an HTTPS JSON API (`api.mailjet.com`), which — unlike SMTP — Render does not block. `Cc` is a first-class field on Mailjet's `Send API v3.1`; `reply_to` is set via its documented `Headers` mechanism (`{"Reply-To": ...}`) instead of a dedicated top-level field, since v3.1 doesn't have one. The switch is a straight swap in `app/services/email.py` — same shape (verified sender, HTTPS POST, JSON body, Gmail fallback if it fails) — `USE_BREVO`/`BREVO_API_KEY` became `USE_MAILJET`/`MAILJET_API_KEY`/`MAILJET_API_SECRET` (Mailjet authenticates with an API key *and* secret key via HTTP Basic Auth, not the single bearer key Brevo used). The Gmail SMTP fallback itself was left in place as-is (still genuinely useful locally, or on any host that doesn't block outbound SMTP) rather than replaced with a second HTTPS-based provider — a real known-broken-on-Render backup path stayed out of scope for this specific fix.
 
 ### 8d. Email Architecture: Central Inbox, CC/Reply-To, and Why Each of the Three Flows Exists
 
@@ -480,7 +482,7 @@ Domain authentication is still worth doing on Brevo eventually for deliverabilit
 
 ## 13. What You Need to Do Yourself (not buildable by Claude Code alone)
 
-- Create accounts and get API keys: Anthropic (Claude API), email provider (Brevo — see §8c for why, over Resend/SendGrid), hosting platform (Render — see §9; connect this repo, enter the real secret values `render.yaml` declares by name), Supabase (or chosen Postgres host)
+- Create accounts and get API keys: Anthropic (Claude API), email provider (Mailjet — see §8c for why, over Resend/SendGrid/Brevo), hosting platform (Render — see §9; connect this repo, enter the real secret values `render.yaml` declares by name), Supabase (or chosen Postgres host)
 - Decide and register the domain/subdomain for client-facing links
 - Write 2–3 realistic sample intake inputs (including one with intentionally filler/missing fields) to use as your test data and for the "generated proposal sample" deliverable
 - Create your own test user accounts for each role (admin, salesperson, approver) once the app is deployed
