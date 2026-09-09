@@ -1241,6 +1241,11 @@ def _render_section_fragment(
             # _section_fragment.html - this action may have changed either.
             "has_unresolved_gap": has_unresolved_gap,
             "has_unresolved_comments": has_unresolved_comments,
+            # True only here - this is the standalone HTMX-swap render of
+            # this template. proposal_workspace.html includes the same
+            # template once per section for a full page load, where this
+            # must stay unset (see _section_fragment.html's own comment).
+            "oob_review_decision": True,
         },
     )
 
