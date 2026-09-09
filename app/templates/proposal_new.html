@@ -27,7 +27,7 @@
       separate <form> for each action would silently drop whatever the
       user had typed elsewhere on the page the moment they clicked it.
     -->
-    <form method="post" action="/proposals/new" enctype="multipart/form-data">
+    <form method="post" action="/proposals/new" enctype="multipart/form-data" id="new-proposal-form">
       <div class="section-card">
         <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Intake Details</h3>
         <div class="field">
@@ -100,42 +100,134 @@
         {% endif %}
 
         {% if attached_references|length < max_references %}
-        {% if attachable_library_files %}
-        <p class="gate-note"><strong>Attach from the shared library:</strong></p>
-        <div class="checkbox-group" style="margin-bottom: 10px;">
-          {% for f in attachable_library_files %}
-          <label><input type="checkbox" name="library_file_ids" value="{{ f.id }}"> {{ f.name }}{% if f.description %} - {{ f.description }}{% endif %}</label>
-          {% endfor %}
+        <div class="reference-action-buttons">
+          <button type="button" class="btn btn-sm btn-secondary" id="toggle-library-panel">Select from Reference Library</button>
+          <button type="button" class="btn btn-sm btn-secondary" id="toggle-upload-panel">Upload from Device</button>
         </div>
-        <button type="submit" formaction="/proposals/new/attach-library" formnovalidate class="btn btn-sm btn-secondary">
-          Attach Selected
-        </button>
-        {% endif %}
 
-        <p class="gate-note" style="margin-top: 16px;"><strong>Upload from your device:</strong></p>
-        <div class="field">
-          <input type="file" name="files" multiple>
+        <div id="library-panel" hidden style="margin-top: 14px;">
+          {% if attachable_library_files %}
+          <input type="text" id="library-search" class="library-search-input" placeholder="Search by name, description, or tag…">
+          <div class="library-picker-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 24px;"></th>
+                  <th>Name</th>
+                  <th>Tags</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in attachable_library_files %}
+                <tr class="library-picker-row" data-search="{{ (f.name ~ ' ' ~ (f.description or '') ~ ' ' ~ (f.tags|join(' ') if f.tags else ''))|lower }}">
+                  <td><input type="checkbox" name="library_file_ids" value="{{ f.id }}"></td>
+                  <td>
+                    {{ f.name }}
+                    {% if f.description %}<div class="cell-meta">{{ f.description }}</div>{% endif %}
+                  </td>
+                  <td>{{ f.tags|join(', ') if f.tags else '-' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <button type="submit" formaction="/proposals/new/attach-library" formnovalidate class="btn btn-sm btn-secondary">
+            Attach Selected
+          </button>
+          {% else %}
+          <p class="gate-note">No shared library files available to attach.</p>
+          {% endif %}
         </div>
-        <div class="field">
-          <input type="text" name="description" placeholder="Description (optional, applied to all files uploaded here)">
+
+        <div id="upload-panel" hidden style="margin-top: 14px;">
+          <div class="dropzone" id="np-dropzone" tabindex="0" role="button" aria-label="Add files from your device">
+            <div class="dropzone-icon">&#8593;</div>
+            <p class="dropzone-text">Drag files here, or <span class="dropzone-browse">browse</span></p>
+            <p class="dropzone-hint">Accepted: .txt, .md, .pdf, .jpg, .jpeg, .png, .gif, .webp &middot; max 10MB each</p>
+          </div>
+          <input type="file" id="np-upload-files" name="files" multiple hidden
+                 accept=".txt,.md,.pdf,.jpg,.jpeg,.png,.gif,.webp">
+          <p class="error-message upload-reject-error" id="np-upload-reject-error" hidden></p>
+          <p class="gate-note">Pick again to add more without losing what you've already chosen - every file gets its own name, description, and tags below.</p>
+          <div id="np-upload-file-rows"></div>
+          <button type="submit" formaction="/proposals/new/upload-reference" formenctype="multipart/form-data" formnovalidate
+                  class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
+            <span class="spinner spinner-dark" hidden></span>
+            <span data-btn-text>Upload and Attach</span>
+          </button>
         </div>
-        <label style="font-size: 13px;"><input type="checkbox" name="add_to_library" value="yes"> Also add to the shared reference library</label><br><br>
-        <button type="submit" formaction="/proposals/new/upload-reference" formenctype="multipart/form-data" formnovalidate
-                class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
-          <span class="spinner" hidden></span>
-          <span data-btn-text>Upload and Attach</span>
-        </button>
         {% else %}
         <p class="gate-note">Maximum of {{ max_references }} reference files reached - remove one above to attach another.</p>
         {% endif %}
       </div>
 
-      <button type="submit" class="btn" data-loading-text="Creating…">
+      <button type="submit" class="btn" id="create-proposal-btn" data-loading-text="Creating…">
         <span class="spinner" hidden></span>
         <span data-btn-text>Create Proposal</span>
       </button>
     </form>
   </div>
   <script src="/static/app.js"></script>
+  <script>
+    (function () {
+      if (window.setupAccumulatingFileInput) {
+        window.setupAccumulatingFileInput({
+          inputId: "np-upload-files",
+          rowsContainerId: "np-upload-file-rows",
+          dropzoneId: "np-dropzone",
+          errorContainerId: "np-upload-reject-error",
+          includeAddToLibrary: true,
+        });
+      }
+
+      var libraryToggle = document.getElementById("toggle-library-panel");
+      var uploadToggle = document.getElementById("toggle-upload-panel");
+      var libraryPanel = document.getElementById("library-panel");
+      var uploadPanel = document.getElementById("upload-panel");
+
+      function togglePanel(panel, otherPanel) {
+        var opening = panel.hidden;
+        panel.hidden = !opening;
+        if (opening) otherPanel.hidden = true;
+      }
+      if (libraryToggle && libraryPanel && uploadPanel) {
+        libraryToggle.addEventListener("click", function () { togglePanel(libraryPanel, uploadPanel); });
+      }
+      if (uploadToggle && libraryPanel && uploadPanel) {
+        uploadToggle.addEventListener("click", function () { togglePanel(uploadPanel, libraryPanel); });
+      }
+
+      var searchInput = document.getElementById("library-search");
+      if (searchInput) {
+        searchInput.addEventListener("input", function () {
+          var term = searchInput.value.trim().toLowerCase();
+          document.querySelectorAll(".library-picker-row").forEach(function (row) {
+            row.hidden = term.length > 0 && row.dataset.search.indexOf(term) === -1;
+          });
+        });
+      }
+
+      // Create Proposal stays disabled while any OTHER submit button in
+      // this shared form is in flight, and while the required intake
+      // fields aren't all filled - reflecting the existing `required`
+      // constraints proactively instead of only at submit time.
+      var form = document.getElementById("new-proposal-form");
+      var createBtn = document.getElementById("create-proposal-btn");
+      if (form && createBtn) {
+        function refreshCreateEnabled() {
+          createBtn.disabled = !form.checkValidity();
+        }
+        form.addEventListener("input", refreshCreateEnabled);
+        form.addEventListener("change", refreshCreateEnabled);
+        refreshCreateEnabled();
+
+        form.addEventListener("submit", function (event) {
+          if (event.submitter && event.submitter !== createBtn) {
+            createBtn.disabled = true;
+          }
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

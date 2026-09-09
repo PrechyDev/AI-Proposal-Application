@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,14 +10,8 @@ from app.auth import require_can_create
 from app.db import get_db
 from app.models import Proposal, ProposalReference, ReferenceFile, User
 from app.pagination import paginate
-from app.services.reference_files import (
-    CONTENT_TYPES,
-    ReferenceFileError,
-    extension,
-    parse_tags,
-    upload_reference_file,
-)
-from app.storage import StorageError, delete_file, download_file
+from app.services.reference_files import ReferenceFileError, parse_tags, upload_reference_file
+from app.storage import StorageError, create_signed_url, delete_file
 from app.templating import templates
 
 logger = logging.getLogger(__name__)
@@ -136,22 +130,22 @@ def upload_library_files(
     files: list[UploadFile] = File(...),
     names: list[str] = Form(...),
     descriptions: list[str] = Form(...),
-    tags: str = Form(""),
+    tags: list[str] = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_can_create),
 ):
     """Takes several files in one submission - each with its own name/
-    description, entered as parallel form fields (one input row per file,
-    rendered client-side as files are chosen; see library.html). A file that
-    fails validation (bad format, too large) is reported by name without
-    blocking the others - a batch of 5 shouldn't all fail because one was a
-    .docx.
+    description/tags, entered as parallel form fields (one input row per
+    file, built client-side via window.setupAccumulatingFileInput() in
+    app.js as files are chosen; see library.html). A file that fails
+    validation (bad format, too large) is reported by name without
+    blocking the others - a batch of 5 shouldn't all fail because one was
+    a .docx.
     """
     _purge_expired_trash(db)
     errors = []
     created = 0
-    parsed_tags = parse_tags(tags)
-    for file, name, description in zip(files, names, descriptions):
+    for file, name, description, row_tags in zip(files, names, descriptions, tags):
         content = file.file.read()
         try:
             storage_path = upload_reference_file(file.filename or "", content)
@@ -162,7 +156,7 @@ def upload_library_files(
             name=name.strip() or file.filename,
             description=description.strip() or None,
             storage_path=storage_path,
-            tags=parsed_tags,
+            tags=parse_tags(row_tags),
             is_library=True,
             uploaded_by=user.id,
         )
@@ -178,19 +172,22 @@ def upload_library_files(
 def preview_file(
     reference_file_id: int, db: Session = Depends(get_db), user: User = Depends(require_can_create)
 ):
+    """Redirects to a short-lived signed Supabase Storage URL rather than
+    proxying the file's bytes through this server - the file's real
+    content-type was already set at upload time (see
+    services/reference_files.py), so Supabase serves it back the same
+    way regardless of which path fetches it. This is what actually makes
+    the preview modal's iframe load faster: one hop straight to storage
+    instead of browser -> us -> Supabase -> us -> browser for every open.
+    """
     reference_file = db.get(ReferenceFile, reference_file_id)
     if reference_file is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     try:
-        content = download_file(reference_file.storage_path)
+        signed_url = create_signed_url(reference_file.storage_path)
     except StorageError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from None
-    content_type = CONTENT_TYPES.get(extension(reference_file.name), "application/octet-stream")
-    return Response(
-        content=content,
-        media_type=content_type,
-        headers={"Content-Disposition": f'inline; filename="{reference_file.name}"'},
-    )
+    return RedirectResponse(url=signed_url, status_code=status.HTTP_302_FOUND)
 
 
 @router.post("/{reference_file_id}/trash")

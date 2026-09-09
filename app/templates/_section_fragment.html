@@ -1,4 +1,8 @@
 <div id="section-{{ view.section.section_key }}" class="section-card">
+  <div class="section-lock-overlay">
+    <span class="spinner spinner-dark"></span>
+    <span>Working…</span>
+  </div>
   <div class="section-card-header">
     <h3>
       {{ view.title }}
@@ -12,7 +16,8 @@
       <div class="comment-popover">
         <form method="post" action="/proposals/{{ proposal.id }}/comments"
               hx-post="/proposals/{{ proposal.id }}/comments"
-              hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
+              hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML"
+              hx-indicator="closest .section-card">
           <input type="hidden" name="section_key" value="{{ view.section.section_key }}">
           <textarea name="comment_text" rows="2" placeholder="Add a comment on this section..." required></textarea>
           <button type="submit" class="btn btn-sm">
@@ -54,7 +59,8 @@
   {% if pending_overwrite %}
   <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
-        hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
+        hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML"
+        hx-indicator="closest .section-card">
     <input type="hidden" name="confirm_overwrite" value="yes">
     <input type="hidden" name="comment" value="{{ pending_comment }}">
     <button type="submit" class="btn btn-sm">Yes, overwrite and regenerate</button>
@@ -68,7 +74,8 @@
     <summary>Edit manually</summary>
     <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
           hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/edit"
-          hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML">
+          hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML"
+          hx-indicator="closest .section-card">
       <textarea name="content" rows="6">{{ view.section.content }}</textarea>
       <button type="submit" class="btn btn-sm">
         <span class="spinner htmx-indicator"></span>
@@ -80,6 +87,7 @@
   <form method="post" action="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-post="/proposals/{{ proposal.id }}/sections/{{ view.section.section_key }}/regenerate"
         hx-target="#section-{{ view.section.section_key }}" hx-swap="outerHTML"
+        hx-indicator="closest .section-card"
         class="regenerate-form">
     <div class="field">
       <label for="regen-comment-{{ view.section.section_key }}">Comment to guide regeneration (optional)</label>
@@ -87,7 +95,7 @@
     </div>
     <div class="regenerate-form-actions">
       <button type="submit" class="btn btn-sm btn-secondary" {% if view.regenerate_count >= view.regenerate_limit %}disabled{% endif %}>
-        <span class="spinner htmx-indicator"></span>
+        <span class="spinner spinner-dark htmx-indicator"></span>
         <span>Regenerate</span>
       </button>
       <span class="gate-note">({{ view.regenerate_count }}/{{ view.regenerate_limit }} regenerations used)</span>

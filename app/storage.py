@@ -90,6 +90,31 @@ def delete_file(storage_path: str) -> None:
         raise StorageError(f"Delete failed with status {resp.status_code}")
 
 
+def create_signed_url(storage_path: str, expires_in: int = 60) -> str:
+    """Returns a short-lived URL the browser can fetch directly from
+    Supabase Storage, bypassing our own server as a byte-proxy. Preview
+    previously round-tripped the full file through this app on every
+    open (browser -> us -> Supabase -> us -> browser); a signed URL turns
+    that into a single hop straight to Supabase, which is the real fix
+    for how slow a preview felt to open, not just how it looks while
+    loading. The bucket is private, so an unsigned/public URL would 403 -
+    this is Supabase's supported way to grant temporary, unauthenticated
+    read access to one object without making the whole bucket public.
+    """
+    url = f"{_base_url()}/object/sign/{REFERENCE_FILES_BUCKET}/{storage_path}"
+    try:
+        resp = httpx.post(
+            url, headers=_auth_headers(), json={"expiresIn": expires_in}, timeout=_TIMEOUT
+        )
+    except httpx.HTTPError as exc:
+        raise StorageError(f"Could not reach Supabase Storage: {exc}") from None
+    if resp.status_code != 200:
+        logger.error("Supabase Storage sign failed (%s): %s", resp.status_code, resp.text)
+        raise StorageError(f"Sign failed with status {resp.status_code}")
+    signed_path = resp.json()["signedURL"]
+    return f"{_base_url()}{signed_path}"
+
+
 def download_file(storage_path: str) -> bytes:
     url = f"{_base_url()}/object/{REFERENCE_FILES_BUCKET}/{storage_path}"
     try:

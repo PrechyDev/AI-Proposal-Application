@@ -63,7 +63,7 @@
         {% endif %}
 
         {% set iv = pending_intake_values or proposal %}
-        <form method="post" action="/proposals/{{ proposal.id }}/regenerate-full"
+        <form method="post" action="/proposals/{{ proposal.id }}/regenerate-full" id="raw-inputs-form"
               onsubmit="return confirm('Regenerate the entire proposal from these inputs? This rewrites every section and the proposal will be inaccessible to you and your approver until it finishes.');">
           <div class="field">
             <label for="ri_client_name">Client Name</label>
@@ -105,16 +105,13 @@
             <label for="ri_estimated_pricing">Estimated Pricing</label>
             <textarea id="ri_estimated_pricing" name="estimated_pricing" rows="2" required>{{ iv.estimated_pricing }}</textarea>
           </div>
-
-          <button type="submit" class="btn" data-loading-text="Regenerating…">
-            <span class="spinner" hidden></span>
-            <span data-btn-text>Regenerate Full Proposal</span>
-          </button>
         </form>
 
         <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-border);">
+          <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Reference Files</h3>
+
           {% if attached_references %}
-          <div class="list">
+          <div class="list" style="margin-bottom: 16px;">
             {% for ref in attached_references %}
             <div class="list-item">
               <div class="list-item-main">{{ ref.name }}{% if ref.tags %}<div class="list-item-meta">{{ ref.tags|join(', ') }}</div>{% endif %}</div>
@@ -126,30 +123,69 @@
           </div>
           {% endif %}
 
-          {% if attachable_library_files %}
-          <form method="post" action="/proposals/{{ proposal.id }}/references/attach" style="margin-top: 14px;">
-            <p class="gate-note"><strong>Attach from library:</strong></p>
-            <div class="checkbox-group" style="margin-bottom: 10px;">
-              {% for f in attachable_library_files %}
-              <label><input type="checkbox" name="reference_file_ids" value="{{ f.id }}"> {{ f.name }}{% if f.tags %} ({{ f.tags|join(', ') }}){% endif %}</label>
-              {% endfor %}
-            </div>
-            <button type="submit" class="btn btn-sm btn-secondary">Attach Selected</button>
-          </form>
-          {% endif %}
+          <div class="reference-action-buttons">
+            <button type="button" class="btn btn-sm btn-secondary" id="ri-toggle-library-panel">Select from Reference Library</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="ri-toggle-upload-panel">Upload from Device</button>
+          </div>
 
-          <form method="post" action="/proposals/{{ proposal.id }}/references/upload" enctype="multipart/form-data" style="margin-top: 14px;">
-            <p class="gate-note"><strong>Upload a new reference file:</strong></p>
-            <div class="field">
-              <input type="file" name="file" required>
-            </div>
-            <div class="field">
-              <input type="text" name="tags" placeholder="Tags (comma-separated, optional)">
-            </div>
-            <label style="font-size: 13px;"><input type="checkbox" name="add_to_library" value="yes"> Also add to the reusable library</label><br><br>
-            <button type="submit" class="btn btn-sm btn-secondary">Upload and Attach</button>
-          </form>
+          <div id="ri-library-panel" hidden style="margin-top: 14px;">
+            {% if attachable_library_files %}
+            <form method="post" action="/proposals/{{ proposal.id }}/references/attach">
+              <input type="text" id="ri-library-search" class="library-search-input" placeholder="Search by name, description, or tag…">
+              <div class="library-picker-table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 24px;"></th>
+                      <th>Name</th>
+                      <th>Tags</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for f in attachable_library_files %}
+                    <tr class="library-picker-row" data-search="{{ (f.name ~ ' ' ~ (f.description or '') ~ ' ' ~ (f.tags|join(' ') if f.tags else ''))|lower }}">
+                      <td><input type="checkbox" name="reference_file_ids" value="{{ f.id }}"></td>
+                      <td>
+                        {{ f.name }}
+                        {% if f.description %}<div class="cell-meta">{{ f.description }}</div>{% endif %}
+                      </td>
+                      <td>{{ f.tags|join(', ') if f.tags else '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <button type="submit" class="btn btn-sm btn-secondary">Attach Selected</button>
+            </form>
+            {% else %}
+            <p class="gate-note">No shared library files available to attach.</p>
+            {% endif %}
+          </div>
+
+          <div id="ri-upload-panel" hidden style="margin-top: 14px;">
+            <form method="post" action="/proposals/{{ proposal.id }}/references/upload" enctype="multipart/form-data">
+              <div class="dropzone" id="ri-dropzone" tabindex="0" role="button" aria-label="Add files from your device">
+                <div class="dropzone-icon">&#8593;</div>
+                <p class="dropzone-text">Drag files here, or <span class="dropzone-browse">browse</span></p>
+                <p class="dropzone-hint">Accepted: .txt, .md, .pdf, .jpg, .jpeg, .png, .gif, .webp &middot; max 10MB each</p>
+              </div>
+              <input type="file" id="ri-upload-files" name="files" multiple hidden
+                     accept=".txt,.md,.pdf,.jpg,.jpeg,.png,.gif,.webp">
+              <p class="error-message upload-reject-error" id="ri-upload-reject-error" hidden></p>
+              <p class="gate-note">Pick again to add more without losing what you've already chosen - every file gets its own name, description, and tags below.</p>
+              <div id="ri-upload-file-rows"></div>
+              <button type="submit" class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
+                <span class="spinner spinner-dark" hidden></span>
+                <span data-btn-text>Upload and Attach</span>
+              </button>
+            </form>
+          </div>
         </div>
+
+        <button type="submit" form="raw-inputs-form" class="btn" style="margin-top: 20px;" data-loading-text="Regenerating…">
+          <span class="spinner" hidden></span>
+          <span data-btn-text>Regenerate Full Proposal</span>
+        </button>
       </div>
     </details>
     {% endif %}
@@ -227,21 +263,32 @@
       {% if can_edit and proposal.status in ("draft", "changes_requested") %}
       <div class="section-card">
         <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">Submit for Approval</h3>
-        <form method="post" action="/proposals/{{ proposal.id }}/submit">
-          <div class="field">
-            <label for="approver_id">Approver</label>
-            <select name="approver_id" id="approver_id" required>
-              <option value="">-- choose an approver --</option>
-              {% for a in approvers %}
-              <option value="{{ a.id }}" {% if proposal.approver_id == a.id %}selected{% endif %}>{{ a.name }} ({{ a.email }})</option>
-              {% endfor %}
-            </select>
-          </div>
-          <button type="submit" class="btn" data-loading-text="Submitting…">
-            <span class="spinner" hidden></span>
-            <span data-btn-text>{% if proposal.status == "changes_requested" %}Resubmit{% else %}Submit{% endif %} for Approval</span>
-          </button>
-        </form>
+        <div class="quick-actions" style="align-items: flex-end; margin-bottom: 0;">
+          <form method="post" action="/proposals/{{ proposal.id }}/submit">
+            <div class="field">
+              <label for="approver_id">Approver</label>
+              <select name="approver_id" id="approver_id" required>
+                <option value="">-- choose an approver --</option>
+                {% for a in approvers %}
+                <option value="{{ a.id }}" {% if proposal.approver_id == a.id %}selected{% endif %}>{{ a.name }} ({{ a.email }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" class="btn" data-loading-text="Submitting…">
+              <span class="spinner" hidden></span>
+              <span data-btn-text>{% if proposal.status == "changes_requested" %}Resubmit{% else %}Submit{% endif %} for Approval</span>
+            </button>
+          </form>
+          {% if user.is_admin or user.can_approve %}
+          <form method="post" action="/proposals/{{ proposal.id }}/self-approve" style="margin-bottom: 0;"
+                onsubmit="return confirm('Approve this proposal yourself right now, skipping the normal review step? You will be recorded as the approver, and you\'ll be asked whether to send it to the client immediately after.');">
+            <button type="submit" class="btn btn-secondary" data-loading-text="Approving…">
+              <span class="spinner spinner-dark" hidden></span>
+              <span data-btn-text>Self-Approve</span>
+            </button>
+          </form>
+          {% endif %}
+        </div>
       </div>
       {% elif proposal.status == "pending_approval" %}
       <p class="gate-note">Awaiting approval.</p>
@@ -339,5 +386,45 @@
   {% endif %}
 
   <script src="/static/app.js"></script>
+  <script>
+    (function () {
+      if (window.setupAccumulatingFileInput) {
+        window.setupAccumulatingFileInput({
+          inputId: "ri-upload-files",
+          rowsContainerId: "ri-upload-file-rows",
+          dropzoneId: "ri-dropzone",
+          errorContainerId: "ri-upload-reject-error",
+          includeAddToLibrary: true,
+        });
+      }
+
+      var libraryToggle = document.getElementById("ri-toggle-library-panel");
+      var uploadToggle = document.getElementById("ri-toggle-upload-panel");
+      var libraryPanel = document.getElementById("ri-library-panel");
+      var uploadPanel = document.getElementById("ri-upload-panel");
+
+      function togglePanel(panel, otherPanel) {
+        var opening = panel.hidden;
+        panel.hidden = !opening;
+        if (opening) otherPanel.hidden = true;
+      }
+      if (libraryToggle && libraryPanel && uploadPanel) {
+        libraryToggle.addEventListener("click", function () { togglePanel(libraryPanel, uploadPanel); });
+      }
+      if (uploadToggle && libraryPanel && uploadPanel) {
+        uploadToggle.addEventListener("click", function () { togglePanel(uploadPanel, libraryPanel); });
+      }
+
+      var searchInput = document.getElementById("ri-library-search");
+      if (searchInput) {
+        searchInput.addEventListener("input", function () {
+          var term = searchInput.value.trim().toLowerCase();
+          document.querySelectorAll("#ri-library-panel .library-picker-row").forEach(function (row) {
+            row.hidden = term.length > 0 && row.dataset.search.indexOf(term) === -1;
+          });
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

@@ -224,8 +224,10 @@ def attach_library_files_to_new_proposal(
 def upload_reference_for_new_proposal(
     request: Request,
     files: list[UploadFile] = File(default=[]),
-    description: str = Form(""),
-    add_to_library: str = Form(""),
+    names: list[str] = Form(default=[]),
+    descriptions: list[str] = Form(default=[]),
+    tags: list[str] = Form(default=[]),
+    add_to_library_indices: list[int] = Form(default=[]),
     reference_file_ids: list[int] = Form(default=[]),
     client_name: str = Form(""),
     client_email: str = Form(""),
@@ -243,10 +245,13 @@ def upload_reference_for_new_proposal(
     """Uploads one or more files from the salesperson's device before the
     proposal row exists - creates real ReferenceFile rows immediately
     (there's no proposal_id yet to defer to), tracked the same way a
-    library pick is. "Also add to library" and the description apply to
-    the whole batch (each file keeps its own filename as its name) - for
-    per-file naming/description, the Reference Library page's own upload
-    form is the place for that level of care; this is the quick path.
+    library pick is. Each file gets its own name/description/tags (the
+    same accumulating-row UI and parallel-list shape as the library
+    page's own upload - see window.setupAccumulatingFileInput() in
+    app.js) and its own "add to library" checkbox - confirmed per-file,
+    not one flag for the whole batch, so a mixed upload (one file worth
+    keeping for everyone, one only relevant to this proposal) is possible
+    in a single action.
     """
     values = {
         "client_name": client_name, "client_email": client_email, "company_name": company_name,
@@ -263,9 +268,10 @@ def upload_reference_for_new_proposal(
             error="Choose at least one file to upload.", status_code=400,
         )
 
+    add_to_library_set = set(add_to_library_indices)
     attached_ids = list(reference_file_ids)
     errors = []
-    for file in files:
+    for index, (file, name, description, row_tags) in enumerate(zip(files, names, descriptions, tags)):
         if len(attached_ids) >= MAX_NEW_PROPOSAL_REFERENCES:
             errors.append(
                 f"Maximum {MAX_NEW_PROPOSAL_REFERENCES} reference files per proposal - "
@@ -281,10 +287,11 @@ def upload_reference_for_new_proposal(
             continue
 
         reference_file = ReferenceFile(
-            name=file.filename,
+            name=name.strip() or file.filename,
             description=description.strip() or None,
             storage_path=storage_path,
-            is_library=(add_to_library == "yes"),
+            tags=parse_tags(row_tags),
+            is_library=(index in add_to_library_set),
             uploaded_by=user.id,
         )
         db.add(reference_file)
@@ -856,36 +863,60 @@ def remove_reference(
 def upload_reference_for_proposal(
     proposal_id: int,
     request: Request,
-    file: UploadFile = File(...),
-    tags: str = Form(""),
-    add_to_library: str = Form(""),
+    files: list[UploadFile] = File(default=[]),
+    names: list[str] = Form(default=[]),
+    descriptions: list[str] = Form(default=[]),
+    tags: list[str] = Form(default=[]),
+    add_to_library_indices: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
     user: User = Depends(require_can_create),
 ):
+    """Same parallel names/descriptions/tags + per-file add_to_library_indices
+    shape as the library page's and New Proposal page's upload routes (see
+    those for the row-index-based checkbox rationale) - one row per staged
+    file, built client-side by the same window.setupAccumulatingFileInput()
+    helper.
+    """
     proposal = _get_viewable_proposal(proposal_id, db, user)
     if (guard := _regen_guard(request, db, proposal, user)) is not None:
         return guard
-    content = file.file.read()
-    try:
-        storage_path = upload_reference_file(file.filename or "", content)
-    except ReferenceFileError as exc:
-        return _render_workspace(request, db, proposal, user, error=str(exc), status_code=400)
 
-    reference_file = ReferenceFile(
-        name=file.filename,
-        storage_path=storage_path,
-        tags=parse_tags(tags),
-        is_library=(add_to_library == "yes"),
-        uploaded_by=user.id,
-    )
-    db.add(reference_file)
-    db.flush()
-    db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file.id))
+    files = [f for f in files if f.filename]
+    if not files:
+        return _render_workspace(
+            request, db, proposal, user, error="Choose at least one file to upload.", status_code=400
+        )
+
+    add_to_library_set = set(add_to_library_indices)
+    errors = []
+    uploaded = 0
+    for index, (file, name, description, row_tags) in enumerate(zip(files, names, descriptions, tags)):
+        content = file.file.read()
+        try:
+            storage_path = upload_reference_file(file.filename or "", content)
+        except ReferenceFileError as exc:
+            errors.append(f"'{file.filename}': {exc}")
+            continue
+
+        reference_file = ReferenceFile(
+            name=name.strip() or file.filename,
+            description=description.strip() or None,
+            storage_path=storage_path,
+            tags=parse_tags(row_tags),
+            is_library=(index in add_to_library_set),
+            uploaded_by=user.id,
+        )
+        db.add(reference_file)
+        db.flush()
+        db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file.id))
+        uploaded += 1
     db.commit()
     logger.info(
-        "User id=%s uploaded reference file id=%s for proposal id=%s (added to library: %s)",
-        user.id, reference_file.id, proposal.id, reference_file.is_library,
+        "User id=%s uploaded %d reference file(s) for proposal id=%s (%d failed)",
+        user.id, uploaded, proposal.id, len(errors),
     )
+    if errors:
+        return _render_workspace(request, db, proposal, user, error=" ".join(errors), status_code=400)
     return RedirectResponse(url=f"/proposals/{proposal.id}", status_code=303)
 
 
