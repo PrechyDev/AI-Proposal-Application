@@ -1333,6 +1333,27 @@ html.is-navigating #nav-progress-bar {
   display: none;
 }
 
+/* .action-menu's shrink-to-fit inline-block sizing (built for the small
+   dropdown-style menus above) is wrong for a full-width textarea - the
+   section fragment's "Edit manually" toggle needs a normal block instead.
+   Scoped to .manual-edit specifically so the other .action-menu usages
+   (admin reassign-approver, library per-row menu) are untouched. There was
+   no textarea rule at all for this one before, so it fell back to the
+   browser's raw tiny monospace default. */
+.action-menu.manual-edit {
+  display: block;
+}
+
+.manual-edit textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
 .reassign-popover {
   min-width: 200px;
 }
