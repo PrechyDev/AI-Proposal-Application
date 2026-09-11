@@ -1,18 +1,17 @@
 <div id="proposals-list-body">
-  {% if user.can_approve %}
   <div class="tab-bar">
-    <a href="/proposals?tab=all" hx-get="/proposals?tab=all" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true" class="tab-link {% if active_tab == 'all' %}is-active{% endif %}">All</a>
-    <a href="/proposals?tab=created" hx-get="/proposals?tab=created" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true" class="tab-link {% if active_tab == 'created' %}is-active{% endif %}">Created</a>
-    <a href="/proposals?tab=awaiting" hx-get="/proposals?tab=awaiting" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true" class="tab-link {% if active_tab == 'awaiting' %}is-active{% endif %}">Awaiting My Approval</a>
+    <a href="/proposals" hx-get="/proposals" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true"
+       class="tab-link {% if not active_status %}is-active{% endif %}">
+      All <span class="count-pill">{{ stats.total }}</span>
+    </a>
+    {% for key, label in status_labels.items() %}
+    <a href="/proposals?status={{ key }}" hx-get="/proposals?status={{ key }}" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true"
+       class="tab-link {% if active_status == key %}is-active{% endif %}">
+      {{ label }}
+      <span class="count-pill {% if key == 'pending_approval' and stats.by_status.get(key, 0) > 0 %}has-items{% endif %}">{{ stats.by_status.get(key, 0) }}</span>
+    </a>
+    {% endfor %}
   </div>
-  {% endif %}
-
-  {% if active_status %}
-  <p class="gate-note">
-    Filtered by status: <strong>{{ active_status.replace('_', ' ')|title }}</strong>
-    &middot; <a href="/proposals?tab={{ active_tab }}" hx-get="/proposals?tab={{ active_tab }}" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true">Clear filter</a>
-  </p>
-  {% endif %}
 
   {% if proposals %}
   <div style="overflow-x: auto;">

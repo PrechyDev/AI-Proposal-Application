@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import require_can_create, require_user
@@ -22,6 +22,7 @@ from app.models import (
     User,
 )
 from app.models.proposal import PROPOSAL_STATUSES
+from app.services.dashboard_stats import get_dashboard_stats, my_proposals_filter, visible_status_tiles
 from app.services.email import EmailError, send_email
 from app.services.proposal_generation import (
     MAX_REGENERATIONS_PER_SECTION,
@@ -67,7 +68,6 @@ NARRATIVE_TEXT_FIELDS = [
 @router.get("")
 def list_my_proposals(
     request: Request,
-    tab: str = "all",
     status: str = "",
     page: int = 1,
     db: Session = Depends(get_db),
@@ -77,23 +77,14 @@ def list_my_proposals(
     created_by = me OR approver_id = me" - every status, not just what's
     actionable right now (that's what /dashboard's narrower widgets are
     for); this is the full history a salesperson or approver would want to
-    browse. `tab` narrows that same base scope for an approver (who sees
-    both their own created proposals and the ones they're reviewing mixed
-    together) into "All" / "Created" / "Awaiting My Approval" - a
-    salesperson with no approver relationships never has rows the latter
-    two tabs would exclude, so the tabs only render when they'd do
-    anything (`user.can_approve`). `status`, separately, is what the
-    dashboard's clickable stat tiles link into - an optional further
-    narrowing by one specific status, independent of which tab is active.
+    browse. The tab bar here is the same status categories as the
+    dashboard's own stat tiles (`visible_status_tiles` - draft dropped for
+    a pure approver, since it's structurally always 0 for them), with `all`
+    (no `status`) as the first tab - a dashboard tile linking to
+    `/proposals?status=X` lands directly on the matching active tab.
     """
-    base_scope = or_(Proposal.created_by == user.id, Proposal.approver_id == user.id)
+    base_scope = my_proposals_filter(user)
     query = select(Proposal).where(base_scope)
-    if tab == "created":
-        query = query.where(Proposal.created_by == user.id)
-    elif tab == "awaiting":
-        query = query.where(Proposal.approver_id == user.id, Proposal.status == "pending_approval")
-    else:
-        tab = "all"
 
     # A garbage/tampered status value is silently ignored (treated as no
     # filter) rather than erroring - same defensive posture already used
@@ -108,15 +99,15 @@ def list_my_proposals(
     person_ids = {p.created_by for p in proposals} | {p.approver_id for p in proposals if p.approver_id}
     people = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(person_ids))).scalars().all()}
 
-    extra_params = {"tab": tab}
-    if status:
-        extra_params["status"] = status
+    extra_params = {"status": status} if status else {}
 
     context = {
-        "proposals": proposals, "people": people, "user": user, "active_tab": tab,
+        "proposals": proposals, "people": people, "user": user,
         "pagination": pagination, "base_url": "/proposals",
         "extra_params": extra_params,
         "active_status": status,
+        "stats": get_dashboard_stats(user, db),
+        "status_labels": visible_status_tiles(user),
         "pagination_hx_target": "#proposals-list-body",
     }
     # Tab/status switches on this page are HTMX partial swaps (see

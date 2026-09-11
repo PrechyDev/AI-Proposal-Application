@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Request, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
@@ -15,7 +15,6 @@ from app.auth import get_current_user, require_user
 from app.config import get_settings
 from app.db import engine, get_db
 from app.models import DeliveryLog, Proposal, User
-from app.models.proposal import PROPOSAL_STATUSES
 from app.routers.account import router as account_router
 from app.routers.admin import router as admin_router
 from app.routers.approvals import router as approvals_router
@@ -24,6 +23,7 @@ from app.routers.auth import router as auth_router
 from app.routers.client_view import router as client_view_router
 from app.routers.library import router as library_router
 from app.routers.proposals import router as proposals_router
+from app.services.dashboard_stats import get_dashboard_stats, my_proposals_filter, visible_status_tiles
 from app.storage import ensure_bucket_exists
 from app.templating import templates
 
@@ -36,14 +36,6 @@ logger = logging.getLogger(__name__)
 # background job - functionally the same signal, no new infrastructure.
 NUDGE_THRESHOLD = timedelta(days=7)
 settings = get_settings()
-
-STATUS_LABELS = {
-    "draft": "Draft",
-    "pending_approval": "Pending Approval",
-    "changes_requested": "Changes Requested",
-    "approved": "Approved",
-    "sent": "Sent",
-}
 
 
 @asynccontextmanager
@@ -148,32 +140,10 @@ def _get_nudge_candidates(user: User, db: Session) -> list[dict]:
     return candidates
 
 
-def _my_proposals_filter(user: User):
-    """Same scoping as GET /proposals (spec section 4/5): a person's own
-    proposals are whatever they created or are the assigned approver for -
-    reused here so the dashboard's stats/recent-proposals view and the
-    full /proposals list never disagree about what counts as "mine"."""
-    return or_(Proposal.created_by == user.id, Proposal.approver_id == user.id)
-
-
-def _get_dashboard_stats(user: User, db: Session) -> dict:
-    rows = db.execute(
-        select(Proposal.status, func.count(Proposal.id))
-        .where(_my_proposals_filter(user))
-        .group_by(Proposal.status)
-    ).all()
-    by_status = {status_value: 0 for status_value in PROPOSAL_STATUSES}
-    total = 0
-    for status_value, count in rows:
-        by_status[status_value] = count
-        total += count
-    return {"total": total, "by_status": by_status}
-
-
 def _get_recent_proposals(user: User, db: Session, limit: int = 6) -> list[Proposal]:
     return db.execute(
         select(Proposal)
-        .where(_my_proposals_filter(user))
+        .where(my_proposals_filter(user))
         .order_by(Proposal.updated_at.desc())
         .limit(limit)
     ).scalars().all()
@@ -192,17 +162,6 @@ def _get_highest_role(user: User) -> tuple[str, str]:
     if user.can_create:
         return "Salesperson", "badge-sales"
     return "Member", "badge-approver"
-
-
-def _visible_status_tiles(user: User) -> dict:
-    """Draft is structurally meaningless for a pure approver - a draft
-    never has an approver_id set (only gets one once submitted for
-    review), so _my_proposals_filter can never return a nonzero Draft
-    count for them. Everyone with can_create (salesperson or admin) keeps
-    the full set."""
-    if user.can_create:
-        return STATUS_LABELS
-    return {key: label for key, label in STATUS_LABELS.items() if key != "draft"}
 
 
 @app.get("/dashboard")
@@ -228,9 +187,9 @@ def dashboard(request: Request, user: User = Depends(require_user), db: Session 
             "user": user,
             "pending_approvals": pending_approvals,
             "nudge_candidates": nudge_candidates,
-            "stats": _get_dashboard_stats(user, db),
+            "stats": get_dashboard_stats(user, db),
             "recent_proposals": _get_recent_proposals(user, db),
-            "status_labels": _visible_status_tiles(user),
+            "status_labels": visible_status_tiles(user),
             "role_label": role_label,
             "role_badge_class": role_badge_class,
         },
