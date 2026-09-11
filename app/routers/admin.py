@@ -13,6 +13,7 @@ from app.db import get_db
 from app.models import Proposal, User
 from app.models.proposal import PROPOSAL_STATUSES
 from app.pagination import paginate
+from app.routers.proposals import _is_htmx
 from app.services.account_tokens import issue_invite_token
 from app.services.email import EmailError, send_email
 from app.templating import render_email, templates
@@ -235,24 +236,25 @@ def _render_admin_proposals(
         select(User).where(User.can_approve.is_(True), User.is_active.is_(True)).order_by(User.name)
     ).scalars().all()
 
-    return templates.TemplateResponse(
-        request=request,
-        name="admin_proposals.html",
-        context={
-            "proposals": proposals,
-            "people": people,
-            "salespeople": salespeople,
-            "approvers": approvers,
-            "statuses": PROPOSAL_STATUSES,
-            "filters": filters,
-            "error": error,
-            "user": user,
-            "pagination": pagination,
-            "base_url": "/admin/proposals",
-            "extra_params": {k: v for k, v in filters.items() if v},
-        },
-        status_code=status_code,
-    )
+    context = {
+        "proposals": proposals,
+        "people": people,
+        "salespeople": salespeople,
+        "approvers": approvers,
+        "statuses": PROPOSAL_STATUSES,
+        "filters": filters,
+        "error": error,
+        "user": user,
+        "pagination": pagination,
+        "base_url": "/admin/proposals",
+        "extra_params": {k: v for k, v in filters.items() if v},
+        "pagination_hx_target": "#admin-proposals-results",
+    }
+    # The filter bar submits via HTMX (any field change or Enter/Search) so
+    # adjusting a filter doesn't full-reload the page - a plain request
+    # (direct navigation, curl, JS disabled) still gets the full page.
+    template_name = "_admin_proposals_results.html" if _is_htmx(request) else "admin_proposals.html"
+    return templates.TemplateResponse(request=request, name=template_name, context=context, status_code=status_code)
 
 
 @router.get("/proposals")

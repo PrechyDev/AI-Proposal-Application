@@ -1,0 +1,56 @@
+<div id="admin-proposals-results">
+  {% if proposals %}
+  <div style="overflow-x: auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Client/Company</th>
+          <th>Salesperson</th>
+          <th>Approver</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proposals %}
+        <tr>
+          <td><a href="/proposals/{{ p.id }}">{{ p.company_name }}</a><div class="cell-meta">Representative: {{ p.client_name }}</div></td>
+          <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
+          <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
+          <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
+          <td class="cell-meta">{{ p.created_at.strftime('%Y-%m-%d') }}</td>
+          <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+          <td>
+            <div class="quick-actions" style="margin: 0; gap: 8px; flex-wrap: nowrap;">
+              <a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a>
+              {% if p.status == "pending_approval" %}
+              <details class="action-menu">
+                <summary class="btn btn-sm btn-secondary" aria-label="Reassign approver">Reassign</summary>
+                <div class="file-menu-popover reassign-popover">
+                  <form method="post" action="/admin/proposals/{{ p.id }}/reassign-approver">
+                    <div class="field" style="margin-bottom: 8px;">
+                      <select name="approver_id">
+                        {% for u in approvers %}
+                        <option value="{{ u.id }}" {% if p.approver_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <button type="submit" class="btn btn-sm" style="width: 100%;">Reassign</button>
+                  </form>
+                </div>
+              </details>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "_pagination.html" %}
+  {% else %}
+  <div class="empty-state">No proposals match these filters.</div>
+  {% endif %}
+</div>

@@ -1304,48 +1304,72 @@ html.is-navigating #nav-progress-bar {
   color: var(--color-text);
 }
 
-/* --- Admin: All Proposals filter + per-row action popover --- */
-
-.filter-card {
+/* --- Admin: All Proposals filter + per-row action popover ---
+   One toolbar row instead of a tall card: no per-field <label> (aria-label
+   carries accessibility instead), every control sized to its own content
+   rather than stretched to a grid column. Any select/date change submits
+   immediately via hx-trigger="change" on the form (see admin_proposals.html) -
+   only the free-text search waits for Enter/Search, since submitting on
+   every keystroke would fire a request per character. Wraps onto a second
+   line on narrow screens rather than overflowing. */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px 20px;
+.filter-bar input:not([type="checkbox"]),
+.filter-bar select {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-text);
+  background-color: var(--color-surface);
 }
 
-/* Two date inputs need roughly double a normal filter field's width - left
-   at a single auto-fit grid column (like every other filter field here),
-   it either crams both dates illegibly narrow or, once it wraps to its
-   own row past the other 4 fields, ends up stranded at the grid's left
-   edge with the rest of that row empty. Spanning the full grid width
-   fixes the stranding - but spanning the full grid row while capping the
-   two inputs at a natural width just moved the dead space rather than
-   removing it (a wide empty gap to the right of the two compact date
-   pickers, instead of beside the whole field). The field now sits
-   outside the grid entirely, as its own row sized to its actual content
-   width - never a stretched container with room it doesn't use. */
-.date-range-field {
-  margin-top: 16px;
+.filter-bar select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%236B7280' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 11px;
+  cursor: pointer;
+  max-width: 180px;
 }
 
-.date-range-inputs {
+.filter-bar input:focus,
+.filter-bar select:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+
+.filter-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.filter-date-range {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.date-range-inputs input {
-  width: 200px;
+.filter-date-range input {
+  width: 138px;
 }
 
-.filter-actions {
-  margin-top: 20px;
-  margin-bottom: 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border);
+.filter-bar .btn {
+  height: 38px;
+  padding: 0 18px;
 }
 
 /* A summary styled as a plain .btn (not the small icon-circle look
