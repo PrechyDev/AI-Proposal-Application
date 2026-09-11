@@ -114,7 +114,7 @@
           </div>
           <div class="field">
             <label for="ri_date_of_call">Date of Call</label>
-            <input type="date" id="ri_date_of_call" name="date_of_call" value="{{ pending_intake_values.date_of_call if pending_intake_values else proposal.date_of_call.strftime('%Y-%m-%d') }}" required>
+            <input type="date" id="ri_date_of_call" name="date_of_call" value="{{ pending_intake_values.date_of_call if pending_intake_values else proposal.date_of_call.strftime('%Y-%m-%d') }}" max="{{ today }}" required>
           </div>
           <div class="field">
             <label for="ri_client_needs_summary">Summary of Client's Needs</label>

@@ -1,33 +1,38 @@
-Discovery call - Harborline Freight Co.
-Date: 2026-09-08
-Attendees: Marcus Webb (Operations Director, Harborline Freight Co.), Salesperson (Koya Talent)
+Discovery call - Larkspur Events Co.
+Date: 2026-09-07
+Attendees: Naomi Fischer (Operations Lead, Larkspur Events Co.), Salesperson (Koya Talent)
 
 [00:00]
-Salesperson: Thanks for jumping on, Marcus. Tell me a bit about what's going on at Harborline right now.
+Salesperson: Thanks for making time, Naomi. Walk me through what's going on at Larkspur right now.
 
-Marcus: Sure. So we handle freight forwarding for mostly mid-size importers, and a huge part of our week is customs paperwork. Every shipment needs a commercial invoice, a packing list, and a customs declaration, and right now our team fills those out by hand for every single shipment, cross-referencing three different supplier documents each time.
+Naomi: Sure. We run corporate events - conferences, product launches, that kind of thing - and for every event we're coordinating somewhere between 15 and 25 vendors: catering, AV, staffing agencies, florists, the works. Right now all of that lives in one massive shared spreadsheet per event, and it's a nightmare to keep current.
 
-[02:15]
-Salesperson: How many shipments a week are we talking about?
+[02:30]
+Salesperson: What specifically goes wrong with the spreadsheet approach?
 
-Marcus: Somewhere between 60 and 90, depending on the week. And it's not just volume - the actual problem is errors. If a customs declaration doesn't match the commercial invoice exactly, down to line-item totals, the shipment gets held at the port for review. That's happened to us six times in the last two months alone, and each hold costs the client money and costs us the relationship.
+Naomi: The biggest issue is confirmation tracking. We send each vendor an email asking them to confirm their booking, deliverables, and arrival time, and then someone on my team has to manually check who's actually replied and update the sheet by hand. On our last event, two vendors never got a follow-up because it fell through the cracks, and one of them was the AV company - we found out three days before the event that they hadn't confirmed at all.
 
-[05:40]
-Salesperson: Got it. So what would actually help here?
+[05:10]
+Salesperson: How big a team are we talking about handling this?
 
-Marcus: Honestly, if the customs paperwork could just be generated automatically from the supplier documents - pull the line items, match totals, flag anything that doesn't reconcile before it ever gets submitted - that would save us probably 15-20 hours a week across the team, and more importantly it'd stop the holds.
+Naomi: Just three of us, and we run about six to eight events a month during peak season. Each event has its own spreadsheet, so there's no single place to see "which vendors across all our upcoming events haven't confirmed yet."
 
-[08:20]
-Salesperson: Do your supplier documents come in a consistent format?
+[07:45]
+Salesperson: What would actually solve this for you?
 
-Marcus: Not really, that's part of the challenge. Some suppliers send PDFs, some send Excel sheets, a couple of the smaller ones still email us plain text. Whatever gets built needs to handle that, because we can't force our suppliers to change how they send things.
+Naomi: Something that automatically sends the confirmation request, tracks who's replied and who hasn't, and flags anything that's gone quiet after a few days - so nobody finds out three days out that a vendor never confirmed. Ideally one dashboard across all our upcoming events, not one spreadsheet per event.
 
-[11:05]
-Salesperson: Understood. Any timeline pressure on your end?
+[10:20]
+Salesperson: Do vendors typically confirm by email, or do some use other channels?
 
-Marcus: We've got a busier import season starting in about six weeks, so ideally something's live before then. And obviously the goal is cutting down on those customs holds - if we can get through that busy season without a repeat of the last two months, that alone justifies this for us.
+Naomi: Almost entirely email. A few of our long-term vendors text one of us directly, but that's the exception, and honestly we'd rather get everyone into one consistent process anyway.
 
-[13:30]
-Salesperson: Makes sense. I'll put together a proposal based on this and get it over to you.
+[12:00]
+Salesperson: Any timing pressure here?
 
-Marcus: Sounds good, appreciate it.
+Naomi: Our next peak season starts in about eight weeks, so getting this in place before then would let us test it on a slightly quieter month first rather than throwing it straight into the busiest stretch.
+
+[13:15]
+Salesperson: Got it, I'll put a proposal together based on this.
+
+Naomi: Perfect, thank you.

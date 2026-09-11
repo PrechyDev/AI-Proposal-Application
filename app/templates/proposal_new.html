@@ -44,7 +44,7 @@
         </div>
         <div class="field">
           <label for="np_date_of_call">Date of Call</label>
-          <input type="date" id="np_date_of_call" name="date_of_call" value="{{ values.date_of_call or '' }}" required>
+          <input type="date" id="np_date_of_call" name="date_of_call" value="{{ values.date_of_call or '' }}" max="{{ today }}" required>
         </div>
         <div class="field">
           <label for="np_client_needs_summary">Summary of Client's Needs</label>
@@ -162,12 +162,29 @@
         {% endif %}
       </div>
 
-      <button type="submit" class="btn" id="create-proposal-btn" data-loading-text="Creating…">
-        <span class="spinner" hidden></span>
-        <span data-btn-text>Create Proposal</span>
-      </button>
+      <div class="quick-actions" style="margin: 0;">
+        <button type="submit" class="btn" id="create-proposal-btn" data-loading-text="Creating…">
+          <span class="spinner" hidden></span>
+          <span data-btn-text>Create Proposal</span>
+        </button>
+        <button type="submit" formnovalidate class="btn btn-secondary" id="fill-from-references-btn" data-loading-text="Creating…">
+          <span class="spinner spinner-dark" hidden></span>
+          <span data-btn-text>Fill In From Reference Documents</span>
+        </button>
+      </div>
+      <p class="gate-note">Skips the fields above and has Claude write them from your attached reference files. Requires at least one attached reference.</p>
     </form>
   </div>
+
+  <dialog id="unattached-files-modal" class="unattached-files-modal">
+    <h3>Files Not Attached Yet</h3>
+    <p>You have files selected that haven't been attached to this proposal yet. If you continue now, they won't be included.</p>
+    <div class="quick-actions" style="margin: 0;">
+      <button type="button" class="btn" id="unattached-files-attach-first">Attach Them First</button>
+      <button type="button" class="btn btn-secondary" id="unattached-files-continue">Create Without Them</button>
+    </div>
+  </dialog>
+
   <script src="/static/app.js"></script>
   <script>
     (function () {
@@ -214,10 +231,10 @@
       // constraints proactively instead of only at submit time.
       var form = document.getElementById("new-proposal-form");
       var createBtn = document.getElementById("create-proposal-btn");
+      function refreshCreateEnabled() {
+        if (createBtn) createBtn.disabled = !form.checkValidity();
+      }
       if (form && createBtn) {
-        function refreshCreateEnabled() {
-          createBtn.disabled = !form.checkValidity();
-        }
         form.addEventListener("input", refreshCreateEnabled);
         form.addEventListener("change", refreshCreateEnabled);
         refreshCreateEnabled();
@@ -227,6 +244,81 @@
             createBtn.disabled = true;
           }
         });
+      }
+
+      // "Fill In From Reference Documents" only needs the always-required
+      // fields (not the 6 narrative ones - that's the whole point of the
+      // button) plus at least one already-attached reference. Staged
+      // device files / checked-but-unattached library boxes don't count -
+      // they aren't real ReferenceFile rows yet, so generation wouldn't
+      // see them either.
+      var fillBtn = document.getElementById("fill-from-references-btn");
+      var alwaysRequiredIds = ["np_company_name", "np_client_name", "np_client_email", "np_date_of_call"];
+      function alwaysRequiredFieldsValid() {
+        return alwaysRequiredIds.every(function (id) {
+          var el = document.getElementById(id);
+          return el && el.checkValidity();
+        });
+      }
+      function refreshFillEnabled() {
+        if (!fillBtn) return;
+        var hasAttachedReferences = document.querySelectorAll('input[name="reference_file_ids"]').length > 0;
+        fillBtn.disabled = !hasAttachedReferences || !alwaysRequiredFieldsValid();
+      }
+      if (form && fillBtn) {
+        form.addEventListener("input", refreshFillEnabled);
+        form.addEventListener("change", refreshFillEnabled);
+        refreshFillEnabled();
+      }
+
+      // Warn before "Create Proposal" / "Fill In From Reference Documents"
+      // silently drops files that were picked but never actually attached
+      // (the device-upload widget's staged files, or checked-but-unattached
+      // library checkboxes) - this is exactly what create_proposal() can't
+      // see, since it only reads already-attached reference_file_ids.
+      var unattachedModal = document.getElementById("unattached-files-modal");
+      var uploadFilesInput = document.getElementById("np-upload-files");
+      var pendingSubmitter = null;
+      var bypassUnattachedWarning = false;
+
+      function hasUnattachedFiles() {
+        return (uploadFilesInput && uploadFilesInput.files.length > 0)
+          || document.querySelectorAll('input[name="library_file_ids"]:checked').length > 0;
+      }
+
+      if (form && unattachedModal) {
+        form.addEventListener("submit", function (event) {
+          var submitter = event.submitter;
+          if (!submitter || (submitter.id !== "create-proposal-btn" && submitter.id !== "fill-from-references-btn")) return;
+          if (bypassUnattachedWarning) { bypassUnattachedWarning = false; return; }
+          if (hasUnattachedFiles()) {
+            event.preventDefault();
+            pendingSubmitter = submitter;
+            unattachedModal.showModal();
+          }
+        });
+
+        var attachFirstBtn = document.getElementById("unattached-files-attach-first");
+        if (attachFirstBtn) {
+          attachFirstBtn.addEventListener("click", function () {
+            unattachedModal.close();
+            pendingSubmitter = null;
+            // The earlier submit listener may have already disabled
+            // whichever button wasn't the submitter - restore both to
+            // their real state now that nothing actually submitted.
+            refreshCreateEnabled();
+            refreshFillEnabled();
+          });
+        }
+
+        var continueBtn = document.getElementById("unattached-files-continue");
+        if (continueBtn) {
+          continueBtn.addEventListener("click", function () {
+            unattachedModal.close();
+            bypassUnattachedWarning = true;
+            form.requestSubmit(pendingSubmitter);
+          });
+        }
       }
     })();
   </script>

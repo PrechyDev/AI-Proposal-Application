@@ -5,13 +5,13 @@ creation.
 
 | Field | Value |
 | --- | --- |
-| Client Name | Amara Chen |
-| Client Email | amara.chen@brightpath-logistics.com |
-| Company Name | BrightPath Logistics |
-| Date of Call | 2026-09-03 |
-| Summary of Client's Needs | BrightPath's dispatch team manually re-keys shipment data across three separate systems (their TMS, a shared spreadsheet, and their invoicing tool). This causes daily data-entry errors and eats roughly two hours a day of their four-person ops team's time. |
-| Project Scope | Build an automated data-sync pipeline connecting their TMS, spreadsheet, and invoicing tool, with validation checks and error alerts for mismatched records. |
-| Goals and Objectives | Eliminate manual re-entry, cut data errors to near zero, and free up around ten hours a week of ops time for higher-value dispatch work. |
-| Recommended Services or Deliverables | Custom integration build, an error-monitoring dashboard, and two weeks of post-launch support. |
-| Proposed Timeline | Four weeks total: one week discovery and mapping, two weeks build, one week testing and handover. |
-| Estimated Pricing | $6,500 flat fee, includes 30 days of post-launch support. |
+| Client/Company | Solstice Marketing Group |
+| Representative | Jordan Blake |
+| Representative Email | jordan.blake@solstice-marketing.com |
+| Date of Call | 2026-09-10 |
+| Summary of Client's Needs | Solstice's account team manually pulls performance numbers from four separate ad platforms every month and stitches them into a client-facing report by hand, a process that eats roughly a full day per client per month and is prone to copy-paste errors. |
+| Project Scope | Build an automated reporting pipeline that pulls each platform's numbers on a schedule, reconciles them against a shared naming convention, and produces a branded client report automatically. |
+| Goals and Objectives | Cut monthly reporting time from a full day to under an hour per client, eliminate copy-paste errors, and free up account managers for actual strategy work. |
+| Recommended Services or Deliverables | Custom reporting pipeline, a branded report template, and two weeks of post-launch support. |
+| Proposed Timeline | Five weeks total: one week discovery and platform access, three weeks build, one week testing and handover. |
+| Estimated Pricing | $7,200 flat fee, includes 30 days of post-launch support. |

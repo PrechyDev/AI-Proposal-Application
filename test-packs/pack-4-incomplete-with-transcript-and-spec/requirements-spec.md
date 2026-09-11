@@ -1,30 +1,33 @@
-# Harborline Freight Co. - Customs Documentation Requirements (internal note)
+# Larkspur Events Co. - Vendor Confirmation Requirements (internal note)
 
-Shared by Marcus Webb after the call, from Harborline's ops team.
+Shared by Naomi Fischer after the call, from Larkspur's ops team.
 
-## Document types involved
+## Vendor categories tracked per event
 
-1. **Commercial invoice** - itemized list of goods, unit prices, and line totals, issued by the supplier.
-2. **Packing list** - physical contents of each shipment (weights, dimensions, box counts).
-3. **Customs declaration** - the document actually submitted to customs; every line-item total on it must reconcile exactly with the commercial invoice, or the shipment is flagged for manual review at the port.
+- Catering
+- AV / production
+- Staffing agencies
+- Florists / décor
+- Venue-adjacent vendors (parking, security, signage)
 
-## Supplier document formats received today
+Typically 15-25 vendors per event, across 6-8 events a month during peak season.
 
-- ~60% arrive as PDF (scanned or exported)
-- ~30% arrive as Excel/CSV
-- ~10% arrive as plain text in the body of an email
+## Current process
+
+One shared spreadsheet per event, manually updated. A confirmation email goes out to each vendor asking them to confirm booking, deliverables, and arrival time; someone on the ops team checks replies by hand and updates the sheet. No automatic follow-up if a vendor goes quiet.
 
 ## Must-haves for a workable solution
 
-- Extract line items (description, quantity, unit price, total) from whatever format a supplier document arrives in.
-- Cross-check extracted totals against each other before a customs declaration is generated - flag any mismatch instead of submitting it.
-- Produce a customs declaration in the format Harborline's freight software already accepts (a structured CSV import - format available on request, not attached here).
+- Send the initial confirmation request automatically once a vendor is added to an event.
+- Track replies and flag any vendor that hasn't responded after a set number of days (a few days, not weeks - the AV near-miss happened because nothing flagged it until it was almost too late).
+- One consolidated view across *all* upcoming events, not a separate spreadsheet per event - Naomi specifically wants to see every unconfirmed vendor across every event at a glance.
+- Primary channel is email - the system needs to work for that reliably. A few long-term vendors currently text instead, but Larkspur is fine standardizing everyone onto email going forward rather than building a second channel for a handful of exceptions.
 
 ## Explicitly out of scope for this phase
 
-- Automating communication with customs authorities directly - Harborline's own staff still handle submission.
-- Supplier-side changes - whatever is built has to work with documents exactly as suppliers already send them today.
+- Vendor payment or invoicing - this is purely about confirmation and deliverable tracking, not financial reconciliation.
+- Two-way negotiation of terms through the system - vendors confirm what was already agreed, they don't renegotiate through this tool.
 
 ## Timing
 
-Harborline's next import season starts in roughly six weeks from the September 8 call; ideally this is live and handling real shipments before that ramp-up begins.
+Larkspur's next peak season starts in roughly eight weeks from the September 7 call. Naomi wants this live and tested on a quieter month first, before peak season hits.

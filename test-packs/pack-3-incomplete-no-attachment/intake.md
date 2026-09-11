@@ -1,20 +1,21 @@
 # Test Pack 3 - Incomplete fields, no attachment
 
-**Attach:** nothing. Deliberately thin - only the three actually-required
-fields (Client Name, Client Email, Company Name) are filled in; everything
-else is left blank or barely a sentence, to check that generation surfaces a
-real `has_gap` section instead of inventing plausible-sounding detail, and
-that Approve is correctly blocked until the gap is resolved.
+**Attach:** nothing. Deliberately thin, not literally blank - with no
+reference file attached, the six narrative fields are still required (blank
+= a 400 validation error), so each one below carries only a bare minimum of
+real content, thin enough that generation should still gap-mark the
+sections it can't honestly write from, rather than inventing plausible
+detail. Approve should be correctly blocked until the gap is resolved.
 
 | Field | Value |
 | --- | --- |
-| Client Name | Priya Nair |
-| Client Email | priya.nair@westline-clinics.com |
-| Company Name | Westline Clinics |
-| Date of Call | *(leave blank)* |
-| Summary of Client's Needs | Patient scheduling is a mess. |
-| Project Scope | *(leave blank)* |
-| Goals and Objectives | *(leave blank)* |
-| Recommended Services or Deliverables | *(leave blank)* |
-| Proposed Timeline | *(leave blank)* |
-| Estimated Pricing | *(leave blank)* |
+| Client/Company | Northgate Warehousing |
+| Representative | Tomás Reyes |
+| Representative Email | tomas.reyes@northgate-warehousing.com |
+| Date of Call | 2026-09-08 |
+| Summary of Client's Needs | Inventory counts are often wrong. |
+| Project Scope | Not yet defined. |
+| Goals and Objectives | Not yet defined. |
+| Recommended Services or Deliverables | Not yet defined. |
+| Proposed Timeline | Not yet defined. |
+| Estimated Pricing | Not yet defined. |

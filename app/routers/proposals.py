@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
@@ -44,12 +44,16 @@ router = APIRouter(prefix="/proposals")
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# Required per assets/intake-form-fields.md - blank is a form-validation
-# error; filler/placeholder *content* is Claude's job to catch at
-# generation time (spec section 7), not this form's.
-REQUIRED_TEXT_FIELDS = [
+# Blank is a form-validation error; filler/placeholder *content* is
+# Claude's job to catch at generation time (spec section 7), not this
+# form's. Split in two: the narrative fields are only required when
+# there's no reference material to draw from instead - see
+# _validate_intake_fields's has_references parameter.
+ALWAYS_REQUIRED_TEXT_FIELDS = [
     ("client_name", "Client name"),
     ("company_name", "Company name"),
+]
+NARRATIVE_TEXT_FIELDS = [
     ("client_needs_summary", "Summary of client's needs"),
     ("project_scope", "Project scope"),
     ("goals_and_objectives", "Goals and objectives"),
@@ -151,6 +155,7 @@ def _render_new_proposal(
             "attachable_library_files": attachable_library_files,
             "reference_file_ids": reference_file_ids,
             "max_references": MAX_NEW_PROPOSAL_REFERENCES,
+            "today": datetime.now(timezone.utc).date().isoformat(),
         },
         status_code=status_code,
     )
@@ -162,11 +167,21 @@ def new_proposal_form(request: Request, db: Session = Depends(get_db), user: Use
     return _render_new_proposal(request, db, user)
 
 
-def _validate_intake_fields(values: dict, date_of_call: str) -> tuple[list[str], datetime | None]:
+def _validate_intake_fields(
+    values: dict, date_of_call: str, has_references: bool = False
+) -> tuple[list[str], datetime | None]:
+    """has_references defaults to False (the strict/original behavior) so a
+    caller that forgets to pass it fails safe, not permissive - this is the
+    real validation gate, not just a courtesy the client-side JS mirrors."""
     errors = []
-    for field, label in REQUIRED_TEXT_FIELDS:
+    for field, label in ALWAYS_REQUIRED_TEXT_FIELDS:
         if not values[field].strip():
             errors.append(f"{label} is required.")
+
+    if not has_references:
+        for field, label in NARRATIVE_TEXT_FIELDS:
+            if not values[field].strip():
+                errors.append(f"{label} is required.")
 
     if not EMAIL_RE.match(values["client_email"].strip()):
         errors.append("Client email must be a valid email address.")
@@ -176,6 +191,11 @@ def _validate_intake_fields(values: dict, date_of_call: str) -> tuple[list[str],
         parsed_date = datetime.strptime(date_of_call.strip(), "%Y-%m-%d")
     except ValueError:
         errors.append("Date of call must be a valid date.")
+    else:
+        # A discovery call can't have happened in the future - the `max`
+        # attribute on the date input is just UX, this is the real gate.
+        if parsed_date.date() > datetime.now(timezone.utc).date():
+            errors.append("Date of call cannot be in the future.")
     return errors, parsed_date
 
 
@@ -383,22 +403,28 @@ def create_proposal(
         "estimated_pricing": estimated_pricing,
     }
 
-    errors, parsed_date = _validate_intake_fields(values, date_of_call)
-
-    if errors:
-        return _render_new_proposal(
-            request, db, user, values=values, reference_file_ids=reference_file_ids,
-            error=" ".join(errors), status_code=400,
-        )
-
     # Defensive re-check - the hidden field could in principle be tampered
-    # with client-side; only the first N are ever honored either way.
+    # with client-side; only the first N are ever honored either way. Done
+    # before validation (not after) since has_references below must reflect
+    # real, verified rows - never the raw submitted ids, which a "Fill In
+    # From Reference Documents" submission could otherwise spoof to skip
+    # narrative-field validation with references that don't actually exist.
     reference_file_ids = reference_file_ids[:MAX_NEW_PROPOSAL_REFERENCES]
     valid_reference_ids = set(
         db.execute(
             select(ReferenceFile.id).where(ReferenceFile.id.in_(reference_file_ids))
         ).scalars().all()
     )
+
+    errors, parsed_date = _validate_intake_fields(
+        values, date_of_call, has_references=bool(valid_reference_ids)
+    )
+
+    if errors:
+        return _render_new_proposal(
+            request, db, user, values=values, reference_file_ids=reference_file_ids,
+            error=" ".join(errors), status_code=400,
+        )
 
     proposal = Proposal(
         client_name=client_name.strip(),
@@ -612,6 +638,7 @@ def _render_workspace(
             "pending_is_overwrite": pending_is_overwrite,
             "pending_full_regenerate_confirm": pending_full_regenerate_confirm,
             "pending_intake_values": pending_intake_values,
+            "today": datetime.now(timezone.utc).date().isoformat(),
             "attached_references": _get_attached_references(proposal, db),
             "attachable_library_files": _get_attachable_library_files(proposal, db),
             "approvers": _get_approvers(db),
@@ -1110,7 +1137,15 @@ def regenerate_full(
         "goals_and_objectives": goals_and_objectives, "recommended_services": recommended_services,
         "proposed_timeline": proposed_timeline, "estimated_pricing": estimated_pricing,
     }
-    errors, parsed_date = _validate_intake_fields(values, date_of_call)
+    # No reference_file_ids form field on this route (references are
+    # managed via their own immediately-committed attach/upload/remove
+    # POSTs, not hidden fields riding along with this form) - so whether
+    # narrative fields can be left blank is answered from the DB directly,
+    # same pattern as the has_manual_edits check just below.
+    has_reference = db.execute(
+        select(ProposalReference.reference_file_id).where(ProposalReference.proposal_id == proposal.id).limit(1)
+    ).scalar_one_or_none() is not None
+    errors, parsed_date = _validate_intake_fields(values, date_of_call, has_references=has_reference)
     if errors:
         return _render_workspace(request, db, proposal, user, error=" ".join(errors), status_code=400)
 

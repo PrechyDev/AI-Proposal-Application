@@ -1,21 +1,18 @@
-# BrightPath Logistics - Current Systems Overview
+# Solstice Marketing Group - Current Reporting Process
 
-Prepared by the BrightPath ops team ahead of the discovery call, for reference.
+Prepared by the Solstice account team ahead of the discovery call, for reference.
 
-## Systems in use today
+## Platforms in use today
 
-- **TMS (transport management system):** Cargofly, hosted, used by dispatchers to log every shipment as it's booked.
-- **Shared spreadsheet:** a Google Sheet the ops team maintains in parallel, used for internal status tracking that Cargofly doesn't expose well (driver assignment notes, customer-specific handling instructions).
-- **Invoicing tool:** QuickBooks Online, updated manually once a shipment is marked delivered.
+- **Meta Ads Manager** - primary paid social spend, exported as CSV each month.
+- **Google Ads** - search and display campaigns, exported separately.
+- **LinkedIn Campaign Manager** - B2B client campaigns only, a handful of accounts.
+- **A shared Google Sheet** - where all four platforms' numbers get manually re-typed into one combined view per client.
 
 ## The actual pain
 
-Every shipment currently gets keyed into all three systems by hand, separately, by whichever dispatcher is free. That means:
-
-- The same shipment reference number is typed three times, by three different people, on three different days - a clear source of typos and mismatches.
-- When a customer calls asking "where's my shipment," staff have to check whichever of the three systems happens to be most up to date, which isn't always the same one.
-- Invoicing is sometimes delayed by 2-3 days because updating QuickBooks is the last step in the chain and gets deprioritized when dispatchers are busy.
+Every month, an account manager logs into each platform, exports the raw numbers, and manually re-types them into the shared client-reporting sheet - matching up campaign names that don't always match between platforms, and catching typos or mismatches by eye. This takes a full day per client, and with fourteen active clients, reporting alone eats nearly three working weeks a month across the team.
 
 ## What "good" looks like to us
 
-One place a dispatcher enters a shipment, and the other two systems reflect it automatically - with a clear alert if something doesn't match (e.g. a shipment marked delivered in Cargofly but missing from the spreadsheet).
+Numbers pulled automatically from all four sources into one place, with campaign names reconciled against a shared naming convention we already use internally, and a clean report generated at the end without anyone re-typing a single number.

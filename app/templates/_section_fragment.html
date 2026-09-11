@@ -30,6 +30,10 @@
     {% endif %}
   </div>
 
+  {% if view.section.has_gap_marker %}
+  <p class="gate-note">This section is missing detail — add it under Raw Inputs, or attach a reference file, then regenerate.</p>
+  {% endif %}
+
   {% if view.comments and not is_finalized %}
   <div class="comment-thread">
     {% for c in view.comments %}
