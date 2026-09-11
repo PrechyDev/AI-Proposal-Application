@@ -16,28 +16,16 @@
       <span class="badge {{ role_badge_class }}">{{ role_label }}</span>
     </div>
 
-    {% if user.can_create %}
-    <div class="quick-actions">
-      <a href="/proposals/new" class="btn">+ New Proposal</a>
-      <a href="/library" class="btn btn-secondary">Reference Library</a>
-      <a href="/proposals" class="btn btn-secondary">My Proposals</a>
-    </div>
-    {% elif user.can_approve %}
-    <div class="quick-actions">
-      <a href="/proposals" class="btn btn-secondary">My Proposals</a>
-    </div>
-    {% endif %}
-
-    <div class="stats-row">
-      <div class="stat-card stat-total">
+    <div class="stats-row" hx-boost="true">
+      <a href="/proposals" class="stat-card stat-total">
         <div class="stat-number">{{ stats.total }}</div>
         <div class="stat-label">Total</div>
-      </div>
+      </a>
       {% for key, label in status_labels.items() %}
-      <div class="stat-card">
+      <a href="/proposals?status={{ key }}" class="stat-card">
         <div class="stat-number">{{ stats.by_status.get(key, 0) }}</div>
         <div class="stat-label">{{ label }}</div>
-      </div>
+      </a>
       {% endfor %}
     </div>
 
@@ -124,5 +112,7 @@
     </div>
     {% endif %}
   </div>
+
+  <script src="/static/htmx.min.js"></script>
 </body>
 </html>

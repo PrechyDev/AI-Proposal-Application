@@ -210,7 +210,7 @@
               <p class="error-message upload-reject-error" id="ri-upload-reject-error" hidden></p>
               <p class="gate-note">Pick again to add more without losing what you've already chosen - every file gets its own name, description, and tags below.</p>
               <div id="ri-upload-file-rows"></div>
-              <button type="submit" class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
+              <button type="submit" id="ri-upload-submit-btn" class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
                 <span class="spinner spinner-dark" hidden></span>
                 <span data-btn-text>Upload and Attach</span>
               </button>
@@ -408,6 +408,7 @@
           rowsContainerId: "ri-upload-file-rows",
           dropzoneId: "ri-dropzone",
           errorContainerId: "ri-upload-reject-error",
+          uploadButtonId: "ri-upload-submit-btn",
           includeAddToLibrary: true,
         });
       }

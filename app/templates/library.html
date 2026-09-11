@@ -40,7 +40,7 @@
           <p class="error-message upload-reject-error" id="lib-upload-reject-error" hidden></p>
           <p class="gate-note">Pick again to add more without losing what you've already chosen - every file gets its own name, description, and tags below.</p>
           <div id="upload-file-rows"></div>
-          <button type="submit" class="btn" data-loading-text="Uploading…">
+          <button type="submit" id="lib-upload-submit-btn" class="btn" data-loading-text="Uploading…">
             <span class="spinner" hidden></span>
             <span data-btn-text>Add to Library</span>
           </button>
@@ -163,6 +163,7 @@
           rowsContainerId: "upload-file-rows",
           dropzoneId: "lib-dropzone",
           errorContainerId: "lib-upload-reject-error",
+          uploadButtonId: "lib-upload-submit-btn",
           includeAddToLibrary: false,
         });
       }

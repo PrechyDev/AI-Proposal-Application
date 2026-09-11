@@ -172,8 +172,20 @@
     var rowsContainer = document.getElementById(config.rowsContainerId);
     var dropzone = config.dropzoneId ? document.getElementById(config.dropzoneId) : null;
     var errorBox = config.errorContainerId ? document.getElementById(config.errorContainerId) : null;
+    var uploadButton = config.uploadButtonId ? document.getElementById(config.uploadButtonId) : null;
     if (!fileInput || !rowsContainer) return;
     var staged = [];
+
+    // A file staged here isn't uploaded until this button is actually
+    // clicked - highlighting it the moment there's something waiting is a
+    // visible cue that clicking "Create Proposal"/away from this page
+    // would otherwise silently leave these files behind (see the
+    // unattached-files-modal warning, which catches this at submit time -
+    // this is the proactive version of the same thing).
+    function refreshUploadButtonHighlight() {
+      if (!uploadButton) return;
+      uploadButton.classList.toggle("btn-upload-ready", staged.length > 0);
+    }
 
     function syncInputFiles() {
       var dt = new DataTransfer();
@@ -184,6 +196,12 @@
     }
 
     function render() {
+      refreshUploadButtonHighlight();
+      // Staged-file removal below rewrites fileInput.files programmatically
+      // (syncInputFiles), which never fires a native "change" event - this
+      // callback is the only reliable hook for a caller that needs to react
+      // to the staged list changing on both add AND remove.
+      if (typeof config.onStagedChange === "function") config.onStagedChange();
       rowsContainer.innerHTML = "";
       staged.forEach(function (file, index) {
         var row = document.createElement("div");

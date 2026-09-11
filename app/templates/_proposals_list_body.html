@@ -1,0 +1,50 @@
+<div id="proposals-list-body">
+  {% if user.can_approve %}
+  <div class="tab-bar">
+    <a href="/proposals?tab=all" hx-get="/proposals?tab=all" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true" class="tab-link {% if active_tab == 'all' %}is-active{% endif %}">All</a>
+    <a href="/proposals?tab=created" hx-get="/proposals?tab=created" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true" class="tab-link {% if active_tab == 'created' %}is-active{% endif %}">Created</a>
+    <a href="/proposals?tab=awaiting" hx-get="/proposals?tab=awaiting" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true" class="tab-link {% if active_tab == 'awaiting' %}is-active{% endif %}">Awaiting My Approval</a>
+  </div>
+  {% endif %}
+
+  {% if active_status %}
+  <p class="gate-note">
+    Filtered by status: <strong>{{ active_status.replace('_', ' ')|title }}</strong>
+    &middot; <a href="/proposals?tab={{ active_tab }}" hx-get="/proposals?tab={{ active_tab }}" hx-target="#proposals-list-body" hx-swap="outerHTML" hx-push-url="true">Clear filter</a>
+  </p>
+  {% endif %}
+
+  {% if proposals %}
+  <div style="overflow-x: auto;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Client/Company</th>
+          <th>Creator</th>
+          <th>Created</th>
+          <th>Last Modified</th>
+          <th>Approver</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proposals %}
+        <tr>
+          <td><a href="/proposals/{{ p.id }}">{{ p.company_name }}</a><div class="cell-meta">Representative: {{ p.client_name }}</div></td>
+          <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
+          <td class="cell-meta">{{ p.created_at.strftime('%Y-%m-%d') }}</td>
+          <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
+          <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
+          <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
+          <td><a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "_pagination.html" %}
+  {% else %}
+  <div class="empty-state">Nothing here yet.</div>
+  {% endif %}
+</div>

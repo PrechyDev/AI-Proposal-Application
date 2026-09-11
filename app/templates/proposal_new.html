@@ -18,14 +18,12 @@
     {% endif %}
 
     <!--
-      Everything - intake fields, the library picker, the device-upload
-      widget, and each Remove button - lives in this one form. Attach/
-      upload/remove all use formaction (and formenctype for the file
-      upload) to send this same form's live data to a different endpoint
-      instead of the default one, so nothing typed into the intake fields
-      is ever lost by clicking a different action's button - a genuinely
-      separate <form> for each action would silently drop whatever the
-      user had typed elsewhere on the page the moment they clicked it.
+      Intake fields, the library picker, and the device-upload widget all
+      live in this one form. Checking a library box or staging a device
+      file does nothing on its own - both are just page state until the
+      real submit ("Create Proposal" or "Fill In From Reference
+      Documents"), which is the only request that ever uploads/attaches
+      anything.
     -->
     <form method="post" action="/proposals/new" enctype="multipart/form-data" id="new-proposal-form">
       <div class="section-card">
@@ -74,37 +72,15 @@
 
       <div class="section-card">
         <h3 style="font-family: var(--font-heading); color: var(--color-primary); margin-top: 0;">
-          Reference Files ({{ attached_references|length }}/{{ max_references }})
+          Reference Files (<span id="np-reference-count">0</span>/{{ max_references }})
         </h3>
-        <p class="gate-note">Optional - attach up to {{ max_references }} files from the shared library or your own device. Claude will cite them directly where relevant.</p>
+        <p class="gate-note">Optional - pick up to {{ max_references }} files from the shared library or your own device. Nothing uploads until you click Create Proposal or Fill In From Reference Documents below. Claude will cite them directly where relevant.</p>
 
-        {% for ref in attached_references %}
-        <input type="hidden" name="reference_file_ids" value="{{ ref.id }}">
-        {% endfor %}
-
-        {% if attached_references %}
-        <div class="list" style="margin-bottom: 16px;">
-          {% for ref in attached_references %}
-          <div class="list-item">
-            <div class="list-item-main">
-              {{ ref.name }}
-              {% if ref.description %}<div class="list-item-meta">{{ ref.description }}</div>{% endif %}
-            </div>
-            <button type="submit" formaction="/proposals/new/remove-reference" formnovalidate
-                    name="remove_reference_file_id" value="{{ ref.id }}" class="btn btn-sm btn-secondary"
-                    onclick="return confirm('Remove \'{{ ref.name }}\' from this proposal?{% if not ref.is_library %} It is not in the shared library, so it will be permanently deleted after 7 days unless you re-attach it or add it to the library first. This cannot be undone once it is deleted.{% endif %}');">
-              Remove
-            </button>
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if attached_references|length < max_references %}
         <div class="reference-action-buttons">
           <button type="button" class="btn btn-sm btn-secondary" id="toggle-library-panel">Select from Reference Library</button>
           <button type="button" class="btn btn-sm btn-secondary" id="toggle-upload-panel">Upload from Device</button>
         </div>
+        <p class="error-message" id="np-reference-cap-note" hidden></p>
 
         <div id="library-panel" hidden style="margin-top: 14px;">
           {% if attachable_library_files %}
@@ -121,7 +97,7 @@
               <tbody>
                 {% for f in attachable_library_files %}
                 <tr class="library-picker-row" data-search="{{ (f.name ~ ' ' ~ (f.description or '') ~ ' ' ~ (f.tags|join(' ') if f.tags else ''))|lower }}">
-                  <td><input type="checkbox" name="library_file_ids" value="{{ f.id }}"></td>
+                  <td><input type="checkbox" name="library_file_ids" value="{{ f.id }}" {% if f.id in library_file_ids %}checked{% endif %}></td>
                   <td>
                     {{ f.name }}
                     {% if f.description %}<div class="cell-meta">{{ f.description }}</div>{% endif %}
@@ -132,11 +108,8 @@
               </tbody>
             </table>
           </div>
-          <button type="submit" formaction="/proposals/new/attach-library" formnovalidate class="btn btn-sm btn-secondary">
-            Attach Selected
-          </button>
           {% else %}
-          <p class="gate-note">No shared library files available to attach.</p>
+          <p class="gate-note">No shared library files available.</p>
           {% endif %}
         </div>
 
@@ -149,17 +122,9 @@
           <input type="file" id="np-upload-files" name="files" multiple hidden
                  accept=".txt,.md,.pdf,.jpg,.jpeg,.png,.gif,.webp">
           <p class="error-message upload-reject-error" id="np-upload-reject-error" hidden></p>
-          <p class="gate-note">Pick again to add more without losing what you've already chosen - every file gets its own name, description, and tags below.</p>
+          <p class="gate-note">Pick again to add more without losing what you've already chosen - every file gets its own name, description, and tags below. These upload only when you submit the form.</p>
           <div id="np-upload-file-rows"></div>
-          <button type="submit" formaction="/proposals/new/upload-reference" formenctype="multipart/form-data" formnovalidate
-                  class="btn btn-sm btn-secondary" data-loading-text="Uploading…">
-            <span class="spinner spinner-dark" hidden></span>
-            <span data-btn-text>Upload and Attach</span>
-          </button>
         </div>
-        {% else %}
-        <p class="gate-note">Maximum of {{ max_references }} reference files reached - remove one above to attach another.</p>
-        {% endif %}
       </div>
 
       <div class="quick-actions" style="margin: 0;">
@@ -176,15 +141,6 @@
     </form>
   </div>
 
-  <dialog id="unattached-files-modal" class="unattached-files-modal">
-    <h3>Files Not Attached Yet</h3>
-    <p>You have files selected that haven't been attached to this proposal yet. If you continue now, they won't be included.</p>
-    <div class="quick-actions" style="margin: 0;">
-      <button type="button" class="btn" id="unattached-files-attach-first">Attach Them First</button>
-      <button type="button" class="btn btn-secondary" id="unattached-files-continue">Create Without Them</button>
-    </div>
-  </dialog>
-
   <script src="/static/app.js"></script>
   <script>
     (function () {
@@ -195,6 +151,10 @@
           dropzoneId: "np-dropzone",
           errorContainerId: "np-upload-reject-error",
           includeAddToLibrary: true,
+          onStagedChange: function () {
+            refreshFillEnabled();
+            refreshReferenceCap();
+          },
         });
       }
 
@@ -248,11 +208,12 @@
 
       // "Fill In From Reference Documents" only needs the always-required
       // fields (not the 6 narrative ones - that's the whole point of the
-      // button) plus at least one already-attached reference. Staged
-      // device files / checked-but-unattached library boxes don't count -
-      // they aren't real ReferenceFile rows yet, so generation wouldn't
-      // see them either.
+      // button) plus at least one picked reference (checked library box or
+      // staged device file) - both are read live off the page, since
+      // neither is attached to anything server-side until this form is
+      // actually submitted.
       var fillBtn = document.getElementById("fill-from-references-btn");
+      var uploadFilesInput = document.getElementById("np-upload-files");
       var alwaysRequiredIds = ["np_company_name", "np_client_name", "np_client_email", "np_date_of_call"];
       function alwaysRequiredFieldsValid() {
         return alwaysRequiredIds.every(function (id) {
@@ -260,10 +221,14 @@
           return el && el.checkValidity();
         });
       }
+      function pickedReferenceCount() {
+        var checkedLibraryCount = document.querySelectorAll('input[name="library_file_ids"]:checked').length;
+        var stagedDeviceCount = uploadFilesInput ? uploadFilesInput.files.length : 0;
+        return checkedLibraryCount + stagedDeviceCount;
+      }
       function refreshFillEnabled() {
         if (!fillBtn) return;
-        var hasAttachedReferences = document.querySelectorAll('input[name="reference_file_ids"]').length > 0;
-        fillBtn.disabled = !hasAttachedReferences || !alwaysRequiredFieldsValid();
+        fillBtn.disabled = pickedReferenceCount() === 0 || !alwaysRequiredFieldsValid();
       }
       if (form && fillBtn) {
         form.addEventListener("input", refreshFillEnabled);
@@ -271,54 +236,29 @@
         refreshFillEnabled();
       }
 
-      // Warn before "Create Proposal" / "Fill In From Reference Documents"
-      // silently drops files that were picked but never actually attached
-      // (the device-upload widget's staged files, or checked-but-unattached
-      // library checkboxes) - this is exactly what create_proposal() can't
-      // see, since it only reads already-attached reference_file_ids.
-      var unattachedModal = document.getElementById("unattached-files-modal");
-      var uploadFilesInput = document.getElementById("np-upload-files");
-      var pendingSubmitter = null;
-      var bypassUnattachedWarning = false;
-
-      function hasUnattachedFiles() {
-        return (uploadFilesInput && uploadFilesInput.files.length > 0)
-          || document.querySelectorAll('input[name="library_file_ids"]:checked').length > 0;
-      }
-
-      if (form && unattachedModal) {
-        form.addEventListener("submit", function (event) {
-          var submitter = event.submitter;
-          if (!submitter || (submitter.id !== "create-proposal-btn" && submitter.id !== "fill-from-references-btn")) return;
-          if (bypassUnattachedWarning) { bypassUnattachedWarning = false; return; }
-          if (hasUnattachedFiles()) {
-            event.preventDefault();
-            pendingSubmitter = submitter;
-            unattachedModal.showModal();
-          }
+      // Client-side courtesy only - the real cap is enforced server-side in
+      // create_proposal() before anything uploads. Disables further picks
+      // once at the cap and shows a short note, mirroring the existing
+      // proactive-not-just-at-submit pattern used for required fields.
+      var maxReferences = {{ max_references }};
+      var referenceCountEl = document.getElementById("np-reference-count");
+      var referenceCapNote = document.getElementById("np-reference-cap-note");
+      function refreshReferenceCap() {
+        var count = pickedReferenceCount();
+        if (referenceCountEl) referenceCountEl.textContent = count;
+        var atCap = count >= maxReferences;
+        if (referenceCapNote) {
+          referenceCapNote.hidden = !atCap;
+          if (atCap) referenceCapNote.textContent = "Maximum " + maxReferences + " reference files - unpick one to choose another.";
+        }
+        document.querySelectorAll('input[name="library_file_ids"]').forEach(function (box) {
+          box.disabled = atCap && !box.checked;
         });
-
-        var attachFirstBtn = document.getElementById("unattached-files-attach-first");
-        if (attachFirstBtn) {
-          attachFirstBtn.addEventListener("click", function () {
-            unattachedModal.close();
-            pendingSubmitter = null;
-            // The earlier submit listener may have already disabled
-            // whichever button wasn't the submitter - restore both to
-            // their real state now that nothing actually submitted.
-            refreshCreateEnabled();
-            refreshFillEnabled();
-          });
-        }
-
-        var continueBtn = document.getElementById("unattached-files-continue");
-        if (continueBtn) {
-          continueBtn.addEventListener("click", function () {
-            unattachedModal.close();
-            bypassUnattachedWarning = true;
-            form.requestSubmit(pendingSubmitter);
-          });
-        }
+      }
+      if (form) {
+        form.addEventListener("input", refreshReferenceCap);
+        form.addEventListener("change", refreshReferenceCap);
+        refreshReferenceCap();
       }
     })();
   </script>

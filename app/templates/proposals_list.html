@@ -13,47 +13,9 @@
       <h1>My Proposals</h1>
     </div>
 
-    {% if user.can_approve %}
-    <div class="tab-bar">
-      <a href="/proposals?tab=all" class="tab-link {% if active_tab == 'all' %}is-active{% endif %}">All</a>
-      <a href="/proposals?tab=created" class="tab-link {% if active_tab == 'created' %}is-active{% endif %}">Created</a>
-      <a href="/proposals?tab=awaiting" class="tab-link {% if active_tab == 'awaiting' %}is-active{% endif %}">Awaiting My Approval</a>
-    </div>
-    {% endif %}
-
-    {% if proposals %}
-    <div style="overflow-x: auto;">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Client/Company</th>
-            <th>Creator</th>
-            <th>Created</th>
-            <th>Last Modified</th>
-            <th>Approver</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in proposals %}
-          <tr>
-            <td><a href="/proposals/{{ p.id }}">{{ p.company_name }}</a><div class="cell-meta">Representative: {{ p.client_name }}</div></td>
-            <td>{{ people.get(p.created_by, "user #" ~ p.created_by) }}</td>
-            <td class="cell-meta">{{ p.created_at.strftime('%Y-%m-%d') }}</td>
-            <td class="cell-meta">{{ p.updated_at.strftime('%Y-%m-%d') }}</td>
-            <td>{{ people.get(p.approver_id, "-") if p.approver_id else "-" }}</td>
-            <td><span class="status-pill status-{{ p.status }}">{{ p.status.replace('_', ' ')|title }}</span></td>
-            <td><a href="/proposals/{{ p.id }}" class="btn btn-sm btn-secondary">Open</a></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% include "_pagination.html" %}
-    {% else %}
-    <div class="empty-state">Nothing here yet.</div>
-    {% endif %}
+    {% include "_proposals_list_body.html" %}
   </div>
+
+  <script src="/static/htmx.min.js"></script>
 </body>
 </html>

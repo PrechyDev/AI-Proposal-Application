@@ -194,6 +194,17 @@ def _get_highest_role(user: User) -> tuple[str, str]:
     return "Member", "badge-approver"
 
 
+def _visible_status_tiles(user: User) -> dict:
+    """Draft is structurally meaningless for a pure approver - a draft
+    never has an approver_id set (only gets one once submitted for
+    review), so _my_proposals_filter can never return a nonzero Draft
+    count for them. Everyone with can_create (salesperson or admin) keeps
+    the full set."""
+    if user.can_create:
+        return STATUS_LABELS
+    return {key: label for key, label in STATUS_LABELS.items() if key != "draft"}
+
+
 @app.get("/dashboard")
 def dashboard(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
     pending_approvals = []
@@ -219,7 +230,7 @@ def dashboard(request: Request, user: User = Depends(require_user), db: Session 
             "nudge_candidates": nudge_candidates,
             "stats": _get_dashboard_stats(user, db),
             "recent_proposals": _get_recent_proposals(user, db),
-            "status_labels": STATUS_LABELS,
+            "status_labels": _visible_status_tiles(user),
             "role_label": role_label,
             "role_badge_class": role_badge_class,
         },

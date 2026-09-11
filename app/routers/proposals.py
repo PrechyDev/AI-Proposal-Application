@@ -21,6 +21,7 @@ from app.models import (
     SectionHistory,
     User,
 )
+from app.models.proposal import PROPOSAL_STATUSES
 from app.services.email import EmailError, send_email
 from app.services.proposal_generation import (
     MAX_REGENERATIONS_PER_SECTION,
@@ -67,6 +68,7 @@ NARRATIVE_TEXT_FIELDS = [
 def list_my_proposals(
     request: Request,
     tab: str = "all",
+    status: str = "",
     page: int = 1,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
@@ -80,7 +82,9 @@ def list_my_proposals(
     together) into "All" / "Created" / "Awaiting My Approval" - a
     salesperson with no approver relationships never has rows the latter
     two tabs would exclude, so the tabs only render when they'd do
-    anything (`user.can_approve`).
+    anything (`user.can_approve`). `status`, separately, is what the
+    dashboard's clickable stat tiles link into - an optional further
+    narrowing by one specific status, independent of which tab is active.
     """
     base_scope = or_(Proposal.created_by == user.id, Proposal.approver_id == user.id)
     query = select(Proposal).where(base_scope)
@@ -91,20 +95,40 @@ def list_my_proposals(
     else:
         tab = "all"
 
+    # A garbage/tampered status value is silently ignored (treated as no
+    # filter) rather than erroring - same defensive posture already used
+    # for reference_file_ids elsewhere in this file.
+    if status not in PROPOSAL_STATUSES:
+        status = ""
+    if status:
+        query = query.where(Proposal.status == status)
+
     proposals, pagination = paginate(db, query, Proposal.updated_at.desc(), page)
 
     person_ids = {p.created_by for p in proposals} | {p.approver_id for p in proposals if p.approver_id}
     people = {u.id: u.name for u in db.execute(select(User).where(User.id.in_(person_ids))).scalars().all()}
 
-    return templates.TemplateResponse(
-        request=request,
-        name="proposals_list.html",
-        context={
-            "proposals": proposals, "people": people, "user": user, "active_tab": tab,
-            "pagination": pagination, "base_url": "/proposals",
-            "extra_params": {"tab": tab},
-        },
-    )
+    extra_params = {"tab": tab}
+    if status:
+        extra_params["status"] = status
+
+    context = {
+        "proposals": proposals, "people": people, "user": user, "active_tab": tab,
+        "pagination": pagination, "base_url": "/proposals",
+        "extra_params": extra_params,
+        "active_status": status,
+        "pagination_hx_target": "#proposals-list-body",
+    }
+    # Tab/status switches on this page are HTMX partial swaps (see
+    # _proposals_list_body.html) - a plain request (direct navigation,
+    # curl, JS disabled) still gets the full page. A *boosted* request
+    # (the dashboard tiles' hx-boost, a real page-to-page navigation) also
+    # sends HX-Request, but is distinguished by HX-Boosted - it must get
+    # the full page too, since boost swaps document.body wholesale and a
+    # bare partial here would wipe out the navbar.
+    is_boosted = request.headers.get("hx-boosted") == "true"
+    template_name = "_proposals_list_body.html" if (_is_htmx(request) and not is_boosted) else "proposals_list.html"
+    return templates.TemplateResponse(request=request, name=template_name, context=context)
 
 
 MAX_NEW_PROPOSAL_REFERENCES = 5
@@ -115,32 +139,23 @@ def _render_new_proposal(
     db: Session,
     user: User,
     values: dict | None = None,
-    reference_file_ids: list[int] | None = None,
+    library_file_ids: list[int] | None = None,
     error: str | None = None,
     status_code: int = 200,
 ):
+    """Reference selection is now deferred to the final submit entirely -
+    there's no "already attached" state to carry across a re-render, so
+    the only thing that needs restoring on a validation-failure re-render
+    is which library checkboxes were checked (`library_file_ids`). Staged
+    device files can't be restored - browsers never let a server response
+    repopulate a file input - so that part is lost on a failed submit.
+    """
     values = values or {}
-    reference_file_ids = reference_file_ids or []
-
-    attached_references: list[ReferenceFile] = []
-    if reference_file_ids:
-        by_id = {
-            f.id: f
-            for f in db.execute(
-                select(ReferenceFile).where(ReferenceFile.id.in_(reference_file_ids))
-            ).scalars().all()
-        }
-        # Preserve the order files were attached in, not whatever order the
-        # IN() query happens to return.
-        attached_references = [by_id[i] for i in reference_file_ids if i in by_id]
+    library_file_ids = library_file_ids or []
 
     attachable_library_files = db.execute(
         select(ReferenceFile)
-        .where(
-            ReferenceFile.is_library.is_(True),
-            ReferenceFile.deleted_at.is_(None),
-            ReferenceFile.id.notin_(reference_file_ids),
-        )
+        .where(ReferenceFile.is_library.is_(True), ReferenceFile.deleted_at.is_(None))
         .order_by(ReferenceFile.name)
     ).scalars().all()
 
@@ -151,9 +166,8 @@ def _render_new_proposal(
             "user": user,
             "error": error,
             "values": values,
-            "attached_references": attached_references,
             "attachable_library_files": attachable_library_files,
-            "reference_file_ids": reference_file_ids,
+            "library_file_ids": library_file_ids,
             "max_references": MAX_NEW_PROPOSAL_REFERENCES,
             "today": datetime.now(timezone.utc).date().isoformat(),
         },
@@ -199,176 +213,6 @@ def _validate_intake_fields(
     return errors, parsed_date
 
 
-@router.post("/new/attach-library")
-def attach_library_files_to_new_proposal(
-    request: Request,
-    library_file_ids: list[int] = Form(default=[]),
-    reference_file_ids: list[int] = Form(default=[]),
-    client_name: str = Form(""),
-    client_email: str = Form(""),
-    company_name: str = Form(""),
-    date_of_call: str = Form(""),
-    client_needs_summary: str = Form(""),
-    project_scope: str = Form(""),
-    goals_and_objectives: str = Form(""),
-    recommended_services: str = Form(""),
-    proposed_timeline: str = Form(""),
-    estimated_pricing: str = Form(""),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_can_create),
-):
-    """Adds one or more existing (non-trashed) library files to the
-    in-progress proposal's tracked reference list - no Proposal row exists
-    yet, so there's nothing to link a ProposalReference to; the tracked list
-    just rides along as hidden fields until the real "Create Proposal"
-    submit. Intake values are carried through untouched so switching tabs
-    to pick references doesn't lose anything already typed.
-    """
-    values = {
-        "client_name": client_name, "client_email": client_email, "company_name": company_name,
-        "date_of_call": date_of_call, "client_needs_summary": client_needs_summary,
-        "project_scope": project_scope, "goals_and_objectives": goals_and_objectives,
-        "recommended_services": recommended_services, "proposed_timeline": proposed_timeline,
-        "estimated_pricing": estimated_pricing,
-    }
-    merged = list(reference_file_ids)
-    for file_id in library_file_ids:
-        if file_id not in merged:
-            merged.append(file_id)
-
-    if len(merged) > MAX_NEW_PROPOSAL_REFERENCES:
-        return _render_new_proposal(
-            request, db, user, values=values, reference_file_ids=reference_file_ids,
-            error=f"Maximum {MAX_NEW_PROPOSAL_REFERENCES} reference files per proposal - "
-            "remove one before attaching another.",
-            status_code=400,
-        )
-    return _render_new_proposal(request, db, user, values=values, reference_file_ids=merged)
-
-
-@router.post("/new/upload-reference")
-def upload_reference_for_new_proposal(
-    request: Request,
-    files: list[UploadFile] = File(default=[]),
-    names: list[str] = Form(default=[]),
-    descriptions: list[str] = Form(default=[]),
-    tags: list[str] = Form(default=[]),
-    add_to_library_indices: list[int] = Form(default=[]),
-    reference_file_ids: list[int] = Form(default=[]),
-    client_name: str = Form(""),
-    client_email: str = Form(""),
-    company_name: str = Form(""),
-    date_of_call: str = Form(""),
-    client_needs_summary: str = Form(""),
-    project_scope: str = Form(""),
-    goals_and_objectives: str = Form(""),
-    recommended_services: str = Form(""),
-    proposed_timeline: str = Form(""),
-    estimated_pricing: str = Form(""),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_can_create),
-):
-    """Uploads one or more files from the salesperson's device before the
-    proposal row exists - creates real ReferenceFile rows immediately
-    (there's no proposal_id yet to defer to), tracked the same way a
-    library pick is. Each file gets its own name/description/tags (the
-    same accumulating-row UI and parallel-list shape as the library
-    page's own upload - see window.setupAccumulatingFileInput() in
-    app.js) and its own "add to library" checkbox - confirmed per-file,
-    not one flag for the whole batch, so a mixed upload (one file worth
-    keeping for everyone, one only relevant to this proposal) is possible
-    in a single action.
-    """
-    values = {
-        "client_name": client_name, "client_email": client_email, "company_name": company_name,
-        "date_of_call": date_of_call, "client_needs_summary": client_needs_summary,
-        "project_scope": project_scope, "goals_and_objectives": goals_and_objectives,
-        "recommended_services": recommended_services, "proposed_timeline": proposed_timeline,
-        "estimated_pricing": estimated_pricing,
-    }
-
-    files = [f for f in files if f.filename]
-    if not files:
-        return _render_new_proposal(
-            request, db, user, values=values, reference_file_ids=reference_file_ids,
-            error="Choose at least one file to upload.", status_code=400,
-        )
-
-    add_to_library_set = set(add_to_library_indices)
-    attached_ids = list(reference_file_ids)
-    errors = []
-    for index, (file, name, description, row_tags) in enumerate(zip(files, names, descriptions, tags)):
-        if len(attached_ids) >= MAX_NEW_PROPOSAL_REFERENCES:
-            errors.append(
-                f"Maximum {MAX_NEW_PROPOSAL_REFERENCES} reference files per proposal - "
-                f"'{file.filename}' and any remaining files were not added."
-            )
-            break
-
-        content = file.file.read()
-        try:
-            storage_path = upload_reference_file(file.filename or "", content)
-        except ReferenceFileError as exc:
-            errors.append(f"'{file.filename}': {exc}")
-            continue
-
-        reference_file = ReferenceFile(
-            name=name.strip() or file.filename,
-            description=description.strip() or None,
-            storage_path=storage_path,
-            tags=parse_tags(row_tags),
-            is_library=(index in add_to_library_set),
-            uploaded_by=user.id,
-        )
-        db.add(reference_file)
-        db.flush()
-        attached_ids.append(reference_file.id)
-
-    db.commit()
-    logger.info(
-        "User id=%s uploaded %d reference file(s) before creating a proposal (%d failed)",
-        user.id, len(attached_ids) - len(reference_file_ids), len(errors),
-    )
-    return _render_new_proposal(
-        request, db, user, values=values, reference_file_ids=attached_ids,
-        error=" ".join(errors) if errors else None, status_code=400 if errors else 200,
-    )
-
-
-@router.post("/new/remove-reference")
-def remove_reference_from_new_proposal(
-    request: Request,
-    remove_reference_file_id: int = Form(...),
-    reference_file_ids: list[int] = Form(default=[]),
-    client_name: str = Form(""),
-    client_email: str = Form(""),
-    company_name: str = Form(""),
-    date_of_call: str = Form(""),
-    client_needs_summary: str = Form(""),
-    project_scope: str = Form(""),
-    goals_and_objectives: str = Form(""),
-    recommended_services: str = Form(""),
-    proposed_timeline: str = Form(""),
-    estimated_pricing: str = Form(""),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_can_create),
-):
-    """Only detaches the id from the tracked list for this in-progress
-    proposal - if it was a device upload never added to the library, the
-    ReferenceFile row itself is left as an orphan (harmless; matches the
-    same accepted trade-off as abandoning this page entirely mid-flow).
-    """
-    values = {
-        "client_name": client_name, "client_email": client_email, "company_name": company_name,
-        "date_of_call": date_of_call, "client_needs_summary": client_needs_summary,
-        "project_scope": project_scope, "goals_and_objectives": goals_and_objectives,
-        "recommended_services": recommended_services, "proposed_timeline": proposed_timeline,
-        "estimated_pricing": estimated_pricing,
-    }
-    remaining = [i for i in reference_file_ids if i != remove_reference_file_id]
-    return _render_new_proposal(request, db, user, values=values, reference_file_ids=remaining)
-
-
 @router.post("/new")
 def create_proposal(
     request: Request,
@@ -386,10 +230,25 @@ def create_proposal(
     recommended_services: str = Form(""),
     proposed_timeline: str = Form(""),
     estimated_pricing: str = Form(""),
-    reference_file_ids: list[int] = Form(default=[]),
+    library_file_ids: list[int] = Form(default=[]),
+    files: list[UploadFile] = File(default=[]),
+    names: list[str] = Form(default=[]),
+    descriptions: list[str] = Form(default=[]),
+    tags: list[str] = Form(default=[]),
+    add_to_library_indices: list[int] = Form(default=[]),
     db: Session = Depends(get_db),
     user: User = Depends(require_can_create),
 ):
+    """Reference handling - both a library pick and a device upload - is
+    deferred entirely to this one submit. No ReferenceFile or Proposal row
+    is created until every cheap, no-I/O check has passed; only once
+    validation clears does the function touch storage. If a device file
+    then fails to upload, the whole request aborts (no Proposal row is
+    created) and any file that *did* upload in that same failed attempt is
+    left as a harmless orphan - the existing 7-day orphaned-reference-file
+    purge (purge_orphaned_reference_files) already cleans those up, so no
+    new rollback logic is needed here.
+    """
     values = {
         "client_name": client_name,
         "client_email": client_email,
@@ -403,28 +262,74 @@ def create_proposal(
         "estimated_pricing": estimated_pricing,
     }
 
-    # Defensive re-check - the hidden field could in principle be tampered
-    # with client-side; only the first N are ever honored either way. Done
-    # before validation (not after) since has_references below must reflect
-    # real, verified rows - never the raw submitted ids, which a "Fill In
-    # From Reference Documents" submission could otherwise spoof to skip
-    # narrative-field validation with references that don't actually exist.
-    reference_file_ids = reference_file_ids[:MAX_NEW_PROPOSAL_REFERENCES]
-    valid_reference_ids = set(
+    # Defensive re-check - the submitted ids could in principle be tampered
+    # with client-side. Done before validation (not after) since
+    # has_references below must reflect real, verified rows - never the raw
+    # submitted ids, which a "Fill In From Reference Documents" submission
+    # could otherwise spoof to skip narrative-field validation with
+    # references that don't actually exist.
+    valid_library_ids = list(
         db.execute(
-            select(ReferenceFile.id).where(ReferenceFile.id.in_(reference_file_ids))
+            select(ReferenceFile.id).where(
+                ReferenceFile.id.in_(library_file_ids),
+                ReferenceFile.is_library.is_(True),
+                ReferenceFile.deleted_at.is_(None),
+            )
         ).scalars().all()
     )
+    device_files = [f for f in files if f.filename]
 
-    errors, parsed_date = _validate_intake_fields(
-        values, date_of_call, has_references=bool(valid_reference_ids)
-    )
+    has_references = bool(valid_library_ids) or bool(device_files)
+    errors, parsed_date = _validate_intake_fields(values, date_of_call, has_references=has_references)
+
+    total_references = len(valid_library_ids) + len(device_files)
+    if total_references > MAX_NEW_PROPOSAL_REFERENCES:
+        errors.append(
+            f"Maximum {MAX_NEW_PROPOSAL_REFERENCES} reference files per proposal - "
+            "remove some before submitting."
+        )
 
     if errors:
         return _render_new_proposal(
-            request, db, user, values=values, reference_file_ids=reference_file_ids,
+            request, db, user, values=values, library_file_ids=library_file_ids,
             error=" ".join(errors), status_code=400,
         )
+
+    # Only now, with validation clear, does anything touch storage.
+    add_to_library_set = set(add_to_library_indices)
+    uploaded_ids = []
+    upload_errors = []
+    for index, (file, name, description, row_tags) in enumerate(zip(device_files, names, descriptions, tags)):
+        content = file.file.read()
+        try:
+            storage_path = upload_reference_file(file.filename or "", content)
+        except ReferenceFileError as exc:
+            upload_errors.append(f"'{file.filename}': {exc}")
+            continue
+
+        reference_file = ReferenceFile(
+            name=name.strip() or file.filename,
+            description=description.strip() or None,
+            storage_path=storage_path,
+            tags=parse_tags(row_tags),
+            is_library=(index in add_to_library_set),
+            uploaded_by=user.id,
+        )
+        db.add(reference_file)
+        db.flush()
+        uploaded_ids.append(reference_file.id)
+
+    if upload_errors:
+        # Abort - no Proposal row is created. Anything that did upload above
+        # is committed as an orphan; the 7-day purge picks it up, same
+        # trade-off as abandoning this page mid-flow.
+        db.commit()
+        return _render_new_proposal(
+            request, db, user, values=values, library_file_ids=library_file_ids,
+            error=" ".join(upload_errors), status_code=400,
+        )
+
+    all_reference_ids = valid_library_ids + uploaded_ids
 
     proposal = Proposal(
         client_name=client_name.strip(),
@@ -444,13 +349,12 @@ def create_proposal(
     db.commit()
     db.refresh(proposal)
 
-    for reference_file_id in reference_file_ids:
-        if reference_file_id in valid_reference_ids:
-            db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file_id))
+    for reference_file_id in all_reference_ids:
+        db.add(ProposalReference(proposal_id=proposal.id, reference_file_id=reference_file_id))
     db.commit()
     logger.info(
         "User id=%s created proposal id=%s with %d reference file(s)",
-        user.id, proposal.id, len(valid_reference_ids & set(reference_file_ids)),
+        user.id, proposal.id, len(all_reference_ids),
     )
 
     # Whether or not Claude succeeds, intake + references are already saved -

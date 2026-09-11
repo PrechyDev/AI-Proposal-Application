@@ -259,6 +259,23 @@ a {
   color: var(--color-danger);
 }
 
+/* A visible cue that files are staged in a device-upload dropzone but not
+   yet actually uploaded/attached. Chained with .btn/.btn-secondary (not a
+   bare class) so it wins on specificity over whichever of those this
+   button already carries, regardless of source order. */
+.btn.btn-upload-ready,
+.btn-secondary.btn-upload-ready {
+  background-color: var(--color-success);
+  border-color: var(--color-success);
+  color: #FFFFFF;
+}
+
+.btn.btn-upload-ready:hover,
+.btn-secondary.btn-upload-ready:hover {
+  background-color: var(--color-success);
+  opacity: 0.9;
+}
+
 .btn-sm {
   padding: 7px 14px;
   font-size: 13px;
@@ -610,6 +627,14 @@ html.is-navigating #nav-progress-bar {
   border-radius: 6px;
   padding: 14px 16px;
   text-align: left;
+  display: block;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.stat-card:hover {
+  border-color: var(--color-accent);
+  cursor: pointer;
 }
 
 .stat-card .stat-number {
@@ -634,6 +659,11 @@ html.is-navigating #nav-progress-bar {
 .stat-card.stat-total .stat-number,
 .stat-card.stat-total .stat-label {
   color: #FFFFFF;
+}
+
+.stat-card.stat-total:hover {
+  border-color: var(--color-accent);
+  opacity: 0.92;
 }
 
 /* --- Status pills (proposal status, semantic per state) --- */
@@ -1192,33 +1222,6 @@ html.is-navigating #nav-progress-bar {
 }
 
 .send-confirm-modal p {
-  color: var(--color-text);
-  margin: 0 0 16px;
-  font-size: 14px;
-}
-
-.unattached-files-modal {
-  max-width: 420px;
-  width: 90%;
-  padding: 28px;
-  border: none;
-  border-radius: 8px;
-  background-color: var(--color-surface);
-  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.25);
-}
-
-.unattached-files-modal::backdrop {
-  background-color: rgba(31, 45, 61, 0.5);
-}
-
-.unattached-files-modal h3 {
-  font-family: var(--font-heading);
-  color: var(--color-primary);
-  margin: 0 0 8px;
-  font-size: 20px;
-}
-
-.unattached-files-modal p {
   color: var(--color-text);
   margin: 0 0 16px;
   font-size: 14px;
